@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(llvm_demo LANGUAGES C CXX)
 
-find_package(LLVM 20.1 REQUIRED CONFIG)
+find_package(LLVM 22.1 REQUIRED CONFIG)
 message(STATUS "Using LLVM ${LLVM_PACKAGE_VERSION}")
 
 add_executable(llvm-demo src/main.cpp)

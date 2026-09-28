@@ -1,7 +1,7 @@
 {
   description = "LLVM development environment and IR generation demo";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
   outputs = { self, nixpkgs }:
     let
@@ -12,7 +12,7 @@
       packages = forAllSystems (system:
         let
           pkgs = pkgsFor system;
-          llvm = pkgs.llvmPackages_20;
+          llvm = pkgs.llvmPackages_22;
         in {
           default = llvm.stdenv.mkDerivation {
             pname = "llvm-demo";
@@ -36,7 +36,7 @@
       devShells = forAllSystems (system:
         let
           pkgs = pkgsFor system;
-          llvm = pkgs.llvmPackages_20;
+          llvm = pkgs.llvmPackages_22;
         in {
           default = pkgs.mkShell.override { stdenv = llvm.stdenv; } {
             inputsFrom = [ self.packages.${system}.default ];
