@@ -18,14 +18,22 @@ class Generator {
   std::map<std::string, llvm::Function *> functions;
   std::map<std::string, llvm::Value *> locals;
 
+  llvm::Type *llvmType(Type type) {
+    return type == Type::I32 ? builder.getInt32Ty() : builder.getInt1Ty();
+  }
+
   llvm::Value *emit(const Expr &expr) {
     switch (expr.kind) {
     case Expr::Integer:
       return builder.getInt32(expr.value);
+    case Expr::Boolean:
+      return builder.getInt1(expr.value != 0);
     case Expr::Variable:
       return locals.at(expr.token.text);
     case Expr::Negate:
       return builder.CreateNeg(emit(*expr.children[0]));
+    case Expr::Not:
+      return builder.CreateNot(emit(*expr.children[0]));
     case Expr::Binary: {
       auto *left = emit(*expr.children[0]);
       auto *right = emit(*expr.children[1]);
@@ -33,7 +41,21 @@ class Generator {
         return builder.CreateAdd(left, right);
       if (expr.token.text == "-")
         return builder.CreateSub(left, right);
-      return builder.CreateMul(left, right);
+      if (expr.token.text == "*")
+        return builder.CreateMul(left, right);
+      if (expr.token.text == "==")
+        return builder.CreateICmpEQ(left, right);
+      if (expr.token.text == "!=")
+        return builder.CreateICmpNE(left, right);
+      if (expr.token.text == "<")
+        return builder.CreateICmpSLT(left, right);
+      if (expr.token.text == "<=")
+        return builder.CreateICmpSLE(left, right);
+      if (expr.token.text == ">")
+        return builder.CreateICmpSGT(left, right);
+      if (expr.token.text == ">=")
+        return builder.CreateICmpSGE(left, right);
+      throw std::runtime_error("internal error: unknown binary operator");
     }
     case Expr::Call: {
       std::vector<llvm::Value *> arguments;
@@ -56,12 +78,12 @@ class Generator {
 public:
   std::string generate(const std::vector<Function> &program) {
     for (const auto &function : program) {
-      std::vector<llvm::Type *> parameters(function.parameters.size(),
-                                           builder.getInt32Ty());
+      std::vector<llvm::Type *> parameters;
+      for (const auto &parameter : function.parameters)
+        parameters.push_back(llvmType(parameter.type));
       auto *type =
-          llvm::FunctionType::get(builder.getInt32Ty(), parameters, false);
+          llvm::FunctionType::get(llvmType(function.returnType), parameters, false);
       bool isMain = function.name.text == "main";
-      // Keep source names separate from C runtime symbols such as printf.
       functions[function.name.text] = llvm::Function::Create(
           type,
           isMain ? llvm::Function::ExternalLinkage
@@ -74,8 +96,8 @@ public:
           llvm::BasicBlock::Create(context, "entry", target));
       locals.clear();
       for (size_t i = 0; i < function.parameters.size(); ++i) {
-        target->getArg(i)->setName(function.parameters[i].text);
-        locals[function.parameters[i].text] = target->getArg(i);
+        target->getArg(i)->setName(function.parameters[i].name.text);
+        locals[function.parameters[i].name.text] = target->getArg(i);
       }
       for (const auto &statement : function.body) {
         auto *value = emit(*statement.expression);
