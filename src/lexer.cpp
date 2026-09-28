@@ -41,10 +41,14 @@ std::vector<Token> lex(const std::string &source) {
         advance();
       } while (pos < source.size() &&
                std::isdigit(static_cast<unsigned char>(source[pos])));
-    } else if (source.compare(pos, 2, "->") == 0) {
+    } else if (source.compare(pos, 2, "->") == 0 ||
+               source.compare(pos, 2, "==") == 0 ||
+               source.compare(pos, 2, "!=") == 0 ||
+               source.compare(pos, 2, "<=") == 0 ||
+               source.compare(pos, 2, ">=") == 0) {
       advance();
       advance();
-    } else if (std::string("(){}:,;=!+-*").find(ch) != std::string::npos) {
+    } else if (std::string("(){}:,;=!+-*<>").find(ch) != std::string::npos) {
       advance();
     } else {
       fail(token, "unexpected character");
