@@ -29,9 +29,17 @@ class Parser {
         !(std::isalpha(static_cast<unsigned char>(t.text[0])) ||
           t.text[0] == '_') ||
         t.text == "fn" || t.text == "let" || t.text == "return" ||
-        t.text == "i32")
+        t.text == "i32" || t.text == "bool" || t.text == "true" ||
+        t.text == "false")
       fail(t, "expected an identifier");
     return take();
+  }
+  Type type() {
+    if (accept("i32"))
+      return Type::I32;
+    if (accept("bool"))
+      return Type::Bool;
+    fail(peek(), "expected a type");
   }
   std::unique_ptr<Expr> primary() {
     Token token = peek();
@@ -41,7 +49,6 @@ class Parser {
       return result;
     }
     if (accept("-")) {
-      // Accept the negative endpoint without accepting 2147483648 on its own.
       if (accept("2147483648")) {
         auto result = std::make_unique<Expr>();
         result->kind = Expr::Integer;
@@ -55,8 +62,21 @@ class Parser {
       result->children.push_back(primary());
       return result;
     }
+    if (accept("!")) {
+      auto result = std::make_unique<Expr>();
+      result->kind = Expr::Not;
+      result->token = token;
+      result->children.push_back(primary());
+      return result;
+    }
     auto result = std::make_unique<Expr>();
     result->token = token;
+    if (token.text == "true" || token.text == "false") {
+      take();
+      result->kind = Expr::Boolean;
+      result->value = token.text == "true";
+      return result;
+    }
     if (!token.text.empty() &&
         std::isdigit(static_cast<unsigned char>(token.text[0]))) {
       take();
@@ -87,9 +107,13 @@ class Parser {
     auto left = primary();
     while (true) {
       const auto op = peek();
-      int precedence = op.text == "*"                       ? 20
-                       : (op.text == "+" || op.text == "-") ? 10
-                                                            : -1;
+      int precedence =
+          op.text == "*" ? 40
+          : (op.text == "+" || op.text == "-") ? 30
+          : (op.text == "<" || op.text == "<=" || op.text == ">" ||
+             op.text == ">=") ? 20
+          : (op.text == "==" || op.text == "!=") ? 10
+          : -1;
       if (precedence < minimum)
         break;
       take();
@@ -114,14 +138,16 @@ public:
       expect("(");
       if (!accept(")")) {
         do {
-          function.parameters.push_back(identifier());
+          Parameter parameter;
+          parameter.name = identifier();
           expect(":");
-          expect("i32");
+          parameter.type = type();
+          function.parameters.push_back(std::move(parameter));
         } while (accept(","));
         expect(")");
       }
       expect("->");
-      expect("i32");
+      function.returnType = type();
       if (accept("!")) {
         expect("{");
         if (!accept("}")) {
