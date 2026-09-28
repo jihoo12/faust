@@ -90,6 +90,41 @@ class CompilerTests(unittest.TestCase):
                      "print(2147483647 + 1); return 0; }",
                      "14\n20\n5\n-14\n-2147483648\n-2147483648\n")
 
+    def test_bool_comparisons_and_typed_calls(self):
+        result = self.compile(
+            "fn less(a: i32, b: i32) -> bool { return a < b; }\n"
+            "fn invert(value: bool) -> bool { return !value; }\n"
+            "fn main() -> i32 { let a = less(1 + 2, 4); "
+            "let b = invert(false); let c = a == b; return 0; }",
+            True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_bool_codegen_uses_i1(self):
+        result = self.compile(
+            "fn same(a: bool, b: bool) -> bool { return a == b; }\n"
+            "fn main() -> i32 { same(true, false); return 0; }")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        ir = self.ir.read_text()
+        self.assertIn("define internal i1 @faust.same(i1", ir)
+        self.assertIn("icmp eq i1", ir)
+
+    def test_type_errors(self):
+        cases = [
+            ("fn main() -> i32 { return true; }", "return type mismatch"),
+            ("fn main() -> bool { return true; }", "main must return i32"),
+            ("fn f(x: bool) -> bool { return x; } fn main() -> i32 { f(1); return 0; }",
+             "argument 1 to 'f' must be bool"),
+            ("fn main() -> i32 { true + false; return 0; }", "requires i32 operands"),
+            ("fn main() -> i32 { !1; return 0; }", "unary '!' requires bool"),
+            ("fn main() -> i32 { true < false; return 0; }", "requires i32 operands"),
+            ("fn main() -> i32 { true == 1; return 0; }", "same type"),
+            ("fn main() -> i32 !{alloc,io,block} { print(true); return 0; }",
+             "argument 1 to 'print' must be i32"),
+        ]
+        for source, message in cases:
+            with self.subTest(source=source):
+                self.reject(source, message)
+
     def test_left_to_right_arguments(self):
         self.execute("fn pair(a: i32, b: i32) -> i32 { return a + b; }\n"
                      "fn main() -> i32 !{alloc,io,block} {\n"
