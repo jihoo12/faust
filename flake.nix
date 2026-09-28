@@ -1,5 +1,5 @@
 {
-  description = "LLVM development environment and IR generation demo";
+  description = "Faust: a systems language prototype with resource contracts";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
@@ -15,10 +15,10 @@
           llvm = pkgs.llvmPackages_22;
         in {
           default = llvm.stdenv.mkDerivation {
-            pname = "llvm-demo";
+            pname = "faust";
             version = "0.1.0";
             src = self;
-            nativeBuildInputs = [ pkgs.cmake pkgs.ninja llvm.llvm ];
+            nativeBuildInputs = [ pkgs.cmake pkgs.ninja pkgs.python3 llvm.llvm ];
             buildInputs = [ llvm.llvm ];
             doCheck = true;
             checkPhase = ''
@@ -30,7 +30,7 @@
         });
 
       checks = forAllSystems (system: {
-        demo = self.packages.${system}.default;
+        compiler = self.packages.${system}.default;
       });
 
       devShells = forAllSystems (system:

@@ -1,0 +1,8 @@
+fn report(value: i32) -> i32 !{alloc, io, block} {
+  return print(value);
+}
+
+// Rejected: main does not grant the effects required by report.
+fn main() -> i32 {
+  return report(42);
+}
