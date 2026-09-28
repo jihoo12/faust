@@ -104,6 +104,27 @@ loops, booleans, strings, pointers, heap allocation, structures, modules, foreig
 function declarations, or ownership. The next design work can build on the
 contract checker before expanding the systems programming surface.
 
+## Compiler structure
+
+The compilation pipeline is source → lexer → parser → AST → semantic checks →
+LLVM IR. The CLI orchestrates these stages and handles file input and output.
+
+| Module | Responsibility |
+| --- | --- |
+| `include/faust/token.h`, `ast.h` | Tokens, source positions, and owned syntax trees |
+| `src/diagnostic.cpp` | Shared source-located error reporting |
+| `src/lexer.cpp` | Source text to tokens |
+| `src/parser.cpp` | Tokens to an AST |
+| `src/semantic.cpp` | Name resolution, call arity, entry point, and contracts |
+| `src/codegen.cpp` | Checked AST to verified LLVM IR |
+| `src/main.cpp` | Command-line arguments, files, and pipeline orchestration |
+
+Module interfaces live in `include/faust/` under the `faust` namespace.
+Parser and generator implementation classes remain private to their source files.
+The `faust_frontend` CMake library has no LLVM dependency; `faust_codegen` keeps
+LLVM headers and compiler definitions private. Call `faust::check()` before
+`faust::generateIR()`; the backend accepts a semantically valid AST.
+
 ## Reproducible build
 
 ```sh
