@@ -72,6 +72,7 @@ struct Function {
   bool isExtern = false;
   bool isVariadic = false;
   std::vector<Statement> body;
+  std::set<std::string> storedLocals;
 };
 
 using Program = std::vector<Function>;

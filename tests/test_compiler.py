@@ -262,6 +262,43 @@ class CompilerTests(unittest.TestCase):
                      "if f() { print(1); } else { print(0); }\n"
                      "return 0; }", "1\n")
 
+    def test_immutable_scalar_parameter_stays_in_ssa(self):
+        result = self.compile(
+            "fn add(a: i32, b: i32) -> i32 { return a + b; }\n"
+            "fn main() -> i32 { add(20, 22); return 0; }")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        ir = self.ir.read_text()
+        add_body = ir.split("define internal i32 @faust.add", 1)[1].split("}", 1)[0]
+        self.assertNotIn("alloca", add_body)
+        self.assertNotIn("load", add_body)
+
+    def test_immutable_scalar_local_stays_in_ssa(self):
+        result = self.compile(
+            "fn value() -> i32 { let x = 42; return x; }\n"
+            "fn main() -> i32 { value(); return 0; }")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        ir = self.ir.read_text()
+        body = ir.split("define internal i32 @faust.value", 1)[1].split("}", 1)[0]
+        self.assertNotIn("alloca", body)
+
+    def test_address_taken_local_keeps_storage(self):
+        result = self.compile(
+            "fn value() -> i32 { let x = 42; let p: *i32 = &x; return *p; }\n"
+            "fn main() -> i32 { value(); return 0; }")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        ir = self.ir.read_text()
+        body = ir.split("define internal i32 @faust.value", 1)[1].split("}", 1)[0]
+        self.assertIn("alloca i32", body)
+
+    def test_mutable_local_keeps_storage(self):
+        result = self.compile(
+            "fn value() -> i32 { let x = 1; x = 2; return x; }\n"
+            "fn main() -> i32 { value(); return 0; }")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        ir = self.ir.read_text()
+        body = ir.split("define internal i32 @faust.value", 1)[1].split("}", 1)[0]
+        self.assertIn("alloca i32", body)
+
     def test_address_of_and_dereference(self):
         self.execute(PRINT_WRAPPER +
                      "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
@@ -475,15 +512,25 @@ class CompilerTests(unittest.TestCase):
             "fn main() -> i32 !{extern} { let a: i8 = 1; let b: u8 = 2; sink(0, a, b); return 0; }")
         self.assertEqual(result.returncode, 0, result.stderr)
         ir = self.ir.read_text()
-        self.assertIn("sext i8", ir)
-        self.assertIn("zext i8", ir)
+        self.assertIn("@sink(i32 0, i32 1, i32 2)", ir)
 
     def test_variadic_f32_promotes_to_f64_in_ir(self):
         result = self.compile(
             "extern sink(tag: i32, ...) -> i32;\n"
             "fn main() -> i32 !{extern} { let x: f32 = 1; sink(0, x); return 0; }")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("fpext float", self.ir.read_text())
+        self.assertIn("@sink(i32 0, double 1.000000e+00)", self.ir.read_text())
+
+    def test_variadic_nonconstant_promotions_in_ir(self):
+        result = self.compile(
+            "extern sink(tag: i32, ...) -> i32;\n"
+            "fn forward(a: i8, b: u8, x: f32) -> i32 !{extern} { return sink(0, a, b, x); }\n"
+            "fn main() -> i32 { return 0; }")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        ir = self.ir.read_text()
+        self.assertIn("sext i8", ir)
+        self.assertIn("zext i8", ir)
+        self.assertIn("fpext float", ir)
 
     def test_string_literal_rejected_for_wrong_pointer_element_type(self):
         self.reject("extern takes_i32_ptr(p: *i32) -> i32 !{extern, asm, syscalls 1};\n"
