@@ -90,6 +90,7 @@ struct Function {
 };
 
 struct Program {
+  std::vector<Token> includes;
   std::vector<StructDecl> structs;
   std::vector<Function> functions;
 };
