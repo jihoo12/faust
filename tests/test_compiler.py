@@ -375,6 +375,12 @@ class CompilerTests(unittest.TestCase):
                      "let xs = [4, 5, 6]; let p: *i32 = get_second(xs); print(*p); return 0; }",
                      "5\n")
 
+    def test_array_literal_decays_to_pointer_argument(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn first(p: *i32) -> i32 { return p[0]; }\n"
+                     "fn main() -> i32 !{asm, syscalls 1} { print(first([41, 42])); return 0; }",
+                     "41\n")
+
     def test_array_decay_in_typed_let(self):
         self.execute(PRINT_WRAPPER +
                      "fn main() -> i32 !{asm, syscalls 1} {\n"
