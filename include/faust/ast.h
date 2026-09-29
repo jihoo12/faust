@@ -9,7 +9,7 @@
 #include <vector>
 
 namespace faust {
-enum class Type { I8, U8, I16, U16, I32, U32, I64, U64, F32, F64, Bool, Void };
+enum class Type { I8, U8, I16, U16, I32, U32, I64, U64, F32, F64, Bool, Pointer, Void };
 
 struct Expr {
   enum Kind { Integer, Boolean, String, Variable, Call, Binary, Negate, Not,
@@ -36,7 +36,6 @@ struct Function {
   Token name;
   std::vector<Token> parameters;
   std::vector<Type> paramTypes;
-  std::vector<bool> paramIsPointer;
   Type returnType = Type::I32;
   std::set<int> syscalls;
   bool hasAsm = false;
