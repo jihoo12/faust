@@ -271,3 +271,17 @@ fn main() -> i32 {
 Include paths are resolved relative to the file containing the `include` statement.
 Includes may be nested. A source file included more than once is loaded only once, and
 cyclic include chains are rejected.
+
+
+## Native object files
+
+Use `-c` with `-o` to emit a native object file for the host target instead
+of textual LLVM IR:
+
+```sh
+faust -c main.faust -o main.o
+clang main.o -o main
+```
+
+On platforms that conventionally use COFF objects, the output may be named
+`.obj`; the object format is selected by LLVM for the host target.
