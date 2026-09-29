@@ -20,26 +20,21 @@ Type checkExpr(const Expr &expr, const Function &function,
                const std::map<std::string, Type> &locals,
                const std::map<std::string, Signature> &signatures) {
   switch (expr.kind) {
-  case Expr::Integer:
-    return Type::I32;
-  case Expr::Boolean:
-    return Type::Bool;
+  case Expr::Integer: return Type::I32;
+  case Expr::Boolean: return Type::Bool;
   case Expr::Variable: {
     auto found = locals.find(expr.token.text);
-    if (found == locals.end())
-      fail(expr.token, "unknown variable '" + expr.token.text + "'");
+    if (found == locals.end()) fail(expr.token, "unknown variable '" + expr.token.text + "'");
     return found->second;
   }
   case Expr::Negate: {
     auto operand = checkExpr(*expr.children[0], function, locals, signatures);
-    if (operand != Type::I32)
-      fail(expr.token, "unary '-' requires i32");
+    if (operand != Type::I32) fail(expr.token, "unary '-' requires i32");
     return Type::I32;
   }
   case Expr::Not: {
     auto operand = checkExpr(*expr.children[0], function, locals, signatures);
-    if (operand != Type::Bool)
-      fail(expr.token, "unary '!' requires bool");
+    if (operand != Type::Bool) fail(expr.token, "unary '!' requires bool");
     return Type::Bool;
   }
   case Expr::Binary: {
@@ -62,22 +57,19 @@ Type checkExpr(const Expr &expr, const Function &function,
   }
   case Expr::Call: {
     auto found = signatures.find(expr.token.text);
-    if (found == signatures.end())
-      fail(expr.token, "unknown function '" + expr.token.text + "'");
+    if (found == signatures.end()) fail(expr.token, "unknown function '" + expr.token.text + "'");
     if (expr.children.size() != found->second.parameters.size())
       fail(expr.token, "wrong number of arguments to '" + expr.token.text + "'");
-    for (const auto &effect : found->second.effects) {
+    for (const auto &effect : found->second.effects)
       if (!function.effects.count(effect))
-        fail(expr.token, "call to '" + expr.token.text + "' requires effect '" +
-                             effect + "' in contract of '" + function.name.text + "'");
-    }
+        fail(expr.token, "call to '" + expr.token.text + "' requires effect '" + effect +
+                             "' in contract of '" + function.name.text + "'");
     for (size_t i = 0; i < expr.children.size(); ++i) {
       auto actual = checkExpr(*expr.children[i], function, locals, signatures);
       auto expected = found->second.parameters[i];
       if (actual != expected)
-        fail(expr.children[i]->token,
-             "argument " + std::to_string(i + 1) + " to '" + expr.token.text +
-                 "' must be " + typeName(expected));
+        fail(expr.children[i]->token, "argument " + std::to_string(i + 1) + " to '" +
+             expr.token.text + "' must be " + typeName(expected));
     }
     return found->second.result;
   }
@@ -85,6 +77,26 @@ Type checkExpr(const Expr &expr, const Function &function,
   fail(expr.token, "internal error: unknown expression");
 }
 
+void checkBlock(const std::vector<Statement> &statements, const Function &function,
+                std::map<std::string, Type> locals,
+                const std::map<std::string, Signature> &signatures) {
+  for (const auto &statement : statements) {
+    Type expressionType = checkExpr(*statement.expression, function, locals, signatures);
+    if (statement.kind == Statement::Let) {
+      if (!locals.emplace(statement.token.text, expressionType).second)
+        fail(statement.token, "duplicate local '" + statement.token.text + "'");
+    } else if (statement.kind == Statement::Return) {
+      if (expressionType != function.returnType)
+        fail(statement.token, "return type mismatch: expected " +
+             std::string(typeName(function.returnType)) + ", got " + typeName(expressionType));
+    } else if (statement.kind == Statement::If) {
+      if (expressionType != Type::Bool)
+        fail(statement.token, "if condition must be bool");
+      checkBlock(statement.thenBranch, function, locals, signatures);
+      checkBlock(statement.elseBranch, function, locals, signatures);
+    }
+  }
+}
 } // namespace
 
 void check(const Program &functions) {
@@ -92,41 +104,22 @@ void check(const Program &functions) {
       {"print", {{Type::I32}, Type::I32, {"alloc", "block", "io"}}}};
   for (const auto &function : functions) {
     std::vector<Type> parameters;
-    for (const auto &parameter : function.parameters)
-      parameters.push_back(parameter.type);
+    for (const auto &parameter : function.parameters) parameters.push_back(parameter.type);
     if (!signatures.emplace(function.name.text,
-                            Signature{parameters, function.returnType,
-                                      function.effects}).second)
-      fail(function.name,
-           "duplicate or reserved function '" + function.name.text + "'");
+        Signature{parameters, function.returnType, function.effects}).second)
+      fail(function.name, "duplicate or reserved function '" + function.name.text + "'");
   }
   auto main = signatures.find("main");
-  if (main == signatures.end())
-    fail(Token{}, "program must define main");
-  if (!main->second.parameters.empty())
-    fail(Token{}, "main must have no parameters");
-  if (main->second.result != Type::I32)
-    fail(Token{}, "main must return i32");
+  if (main == signatures.end()) fail(Token{}, "program must define main");
+  if (!main->second.parameters.empty()) fail(Token{}, "main must have no parameters");
+  if (main->second.result != Type::I32) fail(Token{}, "main must return i32");
 
   for (const auto &function : functions) {
     std::map<std::string, Type> locals;
-    for (const auto &parameter : function.parameters) {
+    for (const auto &parameter : function.parameters)
       if (!locals.emplace(parameter.name.text, parameter.type).second)
         fail(parameter.name, "duplicate parameter '" + parameter.name.text + "'");
-    }
-    for (const auto &statement : function.body) {
-      Type expressionType =
-          checkExpr(*statement.expression, function, locals, signatures);
-      if (statement.kind == Statement::Let) {
-        if (!locals.emplace(statement.token.text, expressionType).second)
-          fail(statement.token, "duplicate local '" + statement.token.text + "'");
-      } else if (statement.kind == Statement::Return &&
-                 expressionType != function.returnType) {
-        fail(statement.token,
-             "return type mismatch: expected " + std::string(typeName(function.returnType)) +
-                 ", got " + typeName(expressionType));
-      }
-    }
+    checkBlock(function.body, function, locals, signatures);
   }
 }
 
