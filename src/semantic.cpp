@@ -305,6 +305,30 @@ void checkStatement(Statement &statement, const Function &function,
   }
 }
 
+
+void collectStoredExpr(const Expr &expr, std::set<std::string> &stored) {
+  if (expr.kind == Expr::AddressOf && !expr.children.empty() &&
+      expr.children[0]->kind == Expr::Variable)
+    stored.insert(expr.children[0]->token.text);
+  for (const auto &child : expr.children)
+    collectStoredExpr(*child, stored);
+}
+
+void collectStoredStatements(const std::vector<Statement> &statements,
+                             std::set<std::string> &stored) {
+  for (const auto &statement : statements) {
+    if (statement.kind == Statement::Assign && statement.condition &&
+        statement.condition->kind == Expr::Variable)
+      stored.insert(statement.condition->token.text);
+    if (statement.expression)
+      collectStoredExpr(*statement.expression, stored);
+    if (statement.condition)
+      collectStoredExpr(*statement.condition, stored);
+    collectStoredStatements(statement.body, stored);
+    collectStoredStatements(statement.elseBody, stored);
+  }
+}
+
 } // namespace
 
 void check(Program &functions) {
@@ -330,6 +354,8 @@ void check(Program &functions) {
       continue;
     if (!function.syscalls.empty() && !function.hasAsm)
       fail(function.name, "function declares syscalls but missing asm effect");
+    function.storedLocals.clear();
+    collectStoredStatements(function.body, function.storedLocals);
     std::map<std::string, Type> locals;
     for (size_t i = 0; i < function.parameters.size(); ++i) {
       if (!locals.emplace(function.parameters[i].text, function.paramTypes[i])
