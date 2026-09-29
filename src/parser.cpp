@@ -59,10 +59,8 @@ class Parser {
     if (accept("f64")) return Type::F64;
     if (accept("bool")) return Type::Bool;
     if (accept("void")) return Type::Void;
-    if (accept("*")) {
-      parseType();
-      return Type::Pointer;
-    }
+    if (accept("*"))
+      return Type::pointer(parseType());
     fail(peek(), "expected a type");
   }
   void parseContract(Function &function) {
