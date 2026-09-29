@@ -8,7 +8,8 @@ add_library(faust_frontend STATIC
   src/diagnostic.cpp
   src/lexer.cpp
   src/parser.cpp
-  src/semantic.cpp)
+  src/semantic.cpp
+  src/string_literal.cpp)
 target_compile_features(faust_frontend PUBLIC cxx_std_17)
 target_include_directories(faust_frontend PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 

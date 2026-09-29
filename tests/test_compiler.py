@@ -267,6 +267,26 @@ class CompilerTests(unittest.TestCase):
                      "fn main() -> i32 !{asm, syscalls 1} {\n"
                      "return write(1, 0, 0); }", "")
 
+    def test_string_literal_is_pointer_typed(self):
+        self.execute("extern puts(s: *i8) -> i32 !{asm, syscalls 1};\n"
+                     "fn main() -> i32 !{asm, syscalls 1} { puts(\"hello\"); return 0; }",
+                     "hello\n")
+
+    def test_string_literal_escape_decoding(self):
+        self.execute("extern printf(fmt: *i8, ...) -> i32 !{asm, syscalls 1};\n"
+                     "fn main() -> i32 !{asm, syscalls 1} { printf(\"a\\tb\\n\"); return 0; }",
+                     "a\tb\n")
+
+    def test_string_literal_rejected_for_wrong_pointer_element_type(self):
+        self.reject("extern takes_i32_ptr(p: *i32) -> i32 !{asm, syscalls 1};\n"
+                    "fn main() -> i32 !{asm, syscalls 1} { return takes_i32_ptr(\"hello\"); }",
+                    "wrong type for argument 1")
+
+    def test_string_literal_rejected_for_integer_param(self):
+        self.reject("fn takes_int(x: i32) -> i32 { return x; }\n"
+                    "fn main() -> i32 { return takes_int(\"hello\"); }",
+                    "wrong type for argument 1")
+
     def test_extern_requires_syscall_contract(self):
         self.reject("extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};\n"
                     "fn main() -> i32 { return write(1, 0, 0); }",

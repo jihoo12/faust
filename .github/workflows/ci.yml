@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Faust
+        run: nix develop --command cmake --fresh -S . -B build -G Ninja
+
+      - name: Build Faust
+        run: nix develop --command cmake --build build
+
+      - name: Run compiler tests
+        run: nix develop --command ctest --test-dir build --output-on-failure

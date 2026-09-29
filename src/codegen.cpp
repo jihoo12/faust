@@ -1,5 +1,6 @@
 #include "faust/codegen.h"
 #include "faust/ir.h"
+#include "faust/string_literal.h"
 
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/InlineAsm.h>
@@ -14,7 +15,7 @@ namespace faust {
 namespace {
 
 bool isFloatType(Type type) {
-  return type == Type::F32 || type == Type::F64;
+  return type.kind == Type::F32 || type.kind == Type::F64;
 }
 
 class Generator {
@@ -26,7 +27,7 @@ class Generator {
   llvm::Function *currentFunction = nullptr;
 
   llvm::Type *llvmType(Type type) {
-    switch (type) {
+    switch (type.kind) {
     case Type::I8: return builder.getInt8Ty();
     case Type::U8: return builder.getInt8Ty();
     case Type::I16: return builder.getInt16Ty();
@@ -38,6 +39,9 @@ class Generator {
     case Type::F32: return builder.getFloatTy();
     case Type::F64: return builder.getDoubleTy();
     case Type::Bool: return builder.getInt1Ty();
+    case Type::Pointer: return builder.getPtrTy();
+    case Type::Array:
+      return llvm::ArrayType::get(llvmType(*type.element), type.length);
     case Type::Void: return builder.getVoidTy();
     }
     return builder.getInt32Ty();
@@ -47,32 +51,14 @@ class Generator {
     switch (expr.kind) {
     case Expr::Integer: {
       llvm::Type *ty = llvmType(expr.type);
-      if (expr.type == Type::F32 || expr.type == Type::F64)
+      if (expr.type.kind == Type::F32 || expr.type.kind == Type::F64)
         return llvm::ConstantFP::get(ty, static_cast<double>(expr.value));
       return llvm::ConstantInt::get(ty, expr.value, true);
     }
     case Expr::Boolean:
       return builder.getInt1(expr.value != 0);
-    case Expr::String: {
-      std::string text = expr.token.text;
-      if (text.size() >= 2 && text.front() == '"' && text.back() == '"')
-        text = text.substr(1, text.size() - 2);
-      std::string processed;
-      for (size_t i = 0; i < text.size(); ++i) {
-        if (text[i] == '\\' && i + 1 < text.size()) {
-          ++i;
-          if (text[i] == 'n') processed += '\n';
-          else if (text[i] == 't') processed += '\t';
-          else if (text[i] == 'r') processed += '\r';
-          else if (text[i] == '\\') processed += '\\';
-          else if (text[i] == '"') processed += '"';
-          else processed += text[i];
-        } else {
-          processed += text[i];
-        }
-      }
-      return builder.CreateGlobalString(processed);
-    }
+    case Expr::String:
+      return builder.CreateGlobalString(decodeStringLiteral(expr.token));
     case Expr::Variable:
       return locals.at(expr.token.text);
     case Expr::Negate:
@@ -248,9 +234,8 @@ public:
   std::string generate(const std::vector<Function> &program) {
     for (const auto &function : program) {
       std::vector<llvm::Type *> parameters;
-      for (size_t i = 0; i < function.paramTypes.size(); ++i)
-        parameters.push_back(function.paramIsPointer[i] ? builder.getPtrTy()
-                                                        : llvmType(function.paramTypes[i]));
+      for (Type type : function.paramTypes)
+        parameters.push_back(llvmType(type));
       auto *type = llvm::FunctionType::get(
           function.isExtern ? builder.getInt32Ty()
                              : llvmType(function.returnType),

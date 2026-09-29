@@ -1,5 +1,6 @@
 #include "faust/semantic.h"
 #include "faust/diagnostic.h"
+#include "faust/string_literal.h"
 
 #include <map>
 #include <set>
@@ -8,7 +9,6 @@ namespace faust {
 namespace {
 struct Signature {
   std::vector<Type> paramTypes;
-  std::vector<bool> paramIsPointer;
   Type returnType;
   std::set<int> syscalls;
   bool hasAsm;
@@ -16,24 +16,37 @@ struct Signature {
 };
 
 bool isNumeric(Type type) {
-  return type == Type::I8 || type == Type::U8 || type == Type::I16 ||
-         type == Type::U16 || type == Type::I32 || type == Type::U32 ||
-         type == Type::I64 || type == Type::U64 || type == Type::F32 ||
-         type == Type::F64;
+  return type.kind == Type::I8 || type.kind == Type::U8 || type.kind == Type::I16 ||
+         type.kind == Type::U16 || type.kind == Type::I32 || type.kind == Type::U32 ||
+         type.kind == Type::I64 || type.kind == Type::U64 || type.kind == Type::F32 ||
+         type.kind == Type::F64;
 }
 
 bool isIntegerType(Type type) {
-  return type == Type::I8 || type == Type::U8 || type == Type::I16 ||
-         type == Type::U16 || type == Type::I32 || type == Type::U32 ||
-         type == Type::I64 || type == Type::U64;
+  return type.kind == Type::I8 || type.kind == Type::U8 || type.kind == Type::I16 ||
+         type.kind == Type::U16 || type.kind == Type::I32 || type.kind == Type::U32 ||
+         type.kind == Type::I64 || type.kind == Type::U64;
 }
 
 bool isFloatType(Type type) {
-  return type == Type::F32 || type == Type::F64;
+  return type.kind == Type::F32 || type.kind == Type::F64;
+}
+
+bool canImplicitlyConvert(const Expr &expr, const Type &target) {
+  if (expr.type == target)
+    return true;
+  if (expr.type.kind == Type::Array && target.kind == Type::Pointer &&
+      expr.type.element && target.element &&
+      *expr.type.element == *target.element)
+    return true;
+  if (expr.kind == Expr::Integer && expr.value == 0 &&
+      target.kind == Type::Pointer)
+    return true;
+  return false;
 }
 
 bool fitsInRange(int64_t value, Type type) {
-  switch (type) {
+  switch (type.kind) {
   case Type::I8: return value >= -128 && value <= 127;
   case Type::U8: return value >= 0 && value <= 255;
   case Type::I16: return value >= -32768 && value <= 32767;
@@ -47,7 +60,7 @@ bool fitsInRange(int64_t value, Type type) {
 }
 
 const char *typeName(Type type) {
-  switch (type) {
+  switch (type.kind) {
   case Type::I8: return "i8";
   case Type::U8: return "u8";
   case Type::I16: return "i16";
@@ -59,6 +72,8 @@ const char *typeName(Type type) {
   case Type::F32: return "f32";
   case Type::F64: return "f64";
   case Type::Bool: return "bool";
+  case Type::Pointer: return "pointer";
+  case Type::Array: return "array";
   case Type::Void: return "void";
   }
   return "unknown";
@@ -75,7 +90,7 @@ void checkExpr(Expr &expr, const Function &function,
     expr.type = Type::Bool;
     break;
   case Expr::String:
-    expr.type = Type::I32;
+    expr.type = Type::array(Type::I8, decodeStringLiteral(expr.token).size() + 1);
     break;
   case Expr::Variable: {
     auto found = locals.find(expr.token.text);
@@ -103,17 +118,10 @@ void checkExpr(Expr &expr, const Function &function,
                             function.name.text + "'");
     for (size_t i = 0; i < found->second.paramTypes.size(); ++i) {
       checkExpr(*expr.children[i], function, locals, signatures);
-      if (expr.children[i]->type != found->second.paramTypes[i]) {
-        bool isNullPointer = found->second.paramIsPointer[i] &&
-                             expr.children[i]->kind == Expr::Integer &&
-                             expr.children[i]->value == 0;
-        bool isStringAsPointer = found->second.paramIsPointer[i] &&
-                                 expr.children[i]->kind == Expr::String;
-        if (!isNullPointer && !isStringAsPointer)
-          fail(expr.children[i]->token,
-               "wrong type for argument " + std::to_string(i + 1) + " to '" +
-                   expr.token.text + "'");
-      }
+      if (!canImplicitlyConvert(*expr.children[i], found->second.paramTypes[i]))
+        fail(expr.children[i]->token,
+             "wrong type for argument " + std::to_string(i + 1) + " to '" +
+                 expr.token.text + "'");
     }
     for (size_t i = found->second.paramTypes.size(); i < expr.children.size(); ++i)
       checkExpr(*expr.children[i], function, locals, signatures);
@@ -128,7 +136,7 @@ void checkExpr(Expr &expr, const Function &function,
     break;
   case Expr::Not:
     checkExpr(*expr.children[0], function, locals, signatures);
-    if (expr.children[0]->type != Type::Bool)
+    if (expr.children[0]->type.kind != Type::Bool)
       fail(expr.token, "'!' requires bool");
     expr.type = Type::Bool;
     break;
@@ -151,8 +159,8 @@ void checkExpr(Expr &expr, const Function &function,
   case Expr::Logical:
     checkExpr(*expr.children[0], function, locals, signatures);
     checkExpr(*expr.children[1], function, locals, signatures);
-    if (expr.children[0]->type != Type::Bool ||
-        expr.children[1]->type != Type::Bool)
+    if (expr.children[0]->type.kind != Type::Bool ||
+        expr.children[1]->type.kind != Type::Bool)
       fail(expr.token, "logical operators require bool operands");
     expr.type = Type::Bool;
     break;
@@ -205,7 +213,7 @@ void checkStatement(Statement &statement, const Function &function,
     break;
   case Statement::If:
     checkExpr(*statement.condition, function, locals, signatures);
-    if (statement.condition->type != Type::Bool)
+    if (statement.condition->type.kind != Type::Bool)
       fail(statement.condition->token, "if condition must be bool");
     {
       auto saved = locals;
@@ -222,7 +230,7 @@ void checkStatement(Statement &statement, const Function &function,
     break;
   case Statement::While:
     checkExpr(*statement.condition, function, locals, signatures);
-    if (statement.condition->type != Type::Bool)
+    if (statement.condition->type.kind != Type::Bool)
       fail(statement.condition->token, "while condition must be bool");
     {
       auto saved = locals;
@@ -256,8 +264,7 @@ void check(Program &functions) {
   for (const auto &function : functions) {
     if (!signatures
              .emplace(function.name.text,
-                      Signature{function.paramTypes, function.paramIsPointer,
-                                function.returnType, function.syscalls,
+                      Signature{function.paramTypes, function.returnType, function.syscalls,
                                 function.hasAsm, function.isVariadic})
              .second)
       fail(function.name,
