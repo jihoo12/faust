@@ -125,6 +125,46 @@ class CompilerTests(unittest.TestCase):
             with self.subTest(source=source):
                 self.reject(source, message)
 
+    def test_if_else_execution(self):
+        self.execute(
+            "fn max(a: i32, b: i32) -> i32 { "
+            "if a > b { return a; } else { return b; } }\n"
+            "fn main() -> i32 !{alloc,io,block} { "
+            "print(max(10, 20)); print(max(30, 5)); return 0; }",
+            "20\n30\n")
+
+    def test_if_without_else_can_continue(self):
+        self.execute(
+            "fn choose(flag: bool) -> i32 { "
+            "if flag { return 7; } return 9; }\n"
+            "fn main() -> i32 !{alloc,io,block} { "
+            "print(choose(true)); print(choose(false)); return 0; }",
+            "7\n9\n")
+
+    def test_nested_if_else(self):
+        self.execute(
+            "fn classify(x: i32) -> i32 { "
+            "if x < 0 { return -1; } else { "
+            "if x == 0 { return 0; } else { return 1; } } }\n"
+            "fn main() -> i32 !{alloc,io,block} { "
+            "print(classify(-2)); print(classify(0)); print(classify(4)); return 0; }",
+            "-1\n0\n1\n")
+
+    def test_if_errors(self):
+        cases = [
+            ("fn main() -> i32 { if 1 { return 1; } else { return 0; } }",
+             "if condition must be bool"),
+            ("fn main() -> i32 { if true { return 1; } }",
+             "function must return on all paths"),
+            ("fn main() -> i32 { if true { let x = 1; } return x; }",
+             "unknown variable 'x'"),
+            ("fn main() -> i32 { if true { return true; } else { return 0; } }",
+             "return type mismatch"),
+        ]
+        for source, message in cases:
+            with self.subTest(source=source):
+                self.reject(source, message)
+
     def test_left_to_right_arguments(self):
         self.execute("fn pair(a: i32, b: i32) -> i32 { return a + b; }\n"
                      "fn main() -> i32 !{alloc,io,block} {\n"
