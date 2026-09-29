@@ -1,55 +1,17 @@
 # Faust
 
 Faust is an experimental systems programming language built around explicit
-syscall contracts. This compiler parses Faust source, checks function
-contracts, and emits verified LLVM 22 IR for interpreted or native execution.
+syscall contracts. The compiler parses Faust source, checks function contracts,
+and emits verified LLVM 22 IR for interpreted or native execution.
 
-```text
-extern write(fd: i32, buf: *i8, len: i32) -> i32 !{asm, syscalls 1};
+## Abstract
 
-fn add(a: i32, b: i32) -> i32 {
-  return a + b;
-}
-
-fn main() -> i32 !{asm, syscalls 1} {
-  let answer = add(20, 22);
-  return write(1, 0, 0);
-}
-```
-
-## Build and run
-
-Install Nix with the `nix-command` and `flakes` experimental features enabled.
-The flake provides LLVM 22, Clang, clangd, LLD, LLDB, CMake, Ninja, and Python
-for tests. Environments are exposed for x86_64 and aarch64 Linux and macOS;
-execution has been tested on x86_64 Linux.
-
-```sh
-nix develop
-cmake --fresh -S . -B build -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-cmake --build build
-ctest --test-dir build --output-on-failure
-./build/faust examples/hello.faust -o build/hello.ll
-lli build/hello.ll
-clang -Wno-unused-command-line-argument -Wno-override-module build/hello.ll -o build/hello
-./build/hello
-```
-
-Both execution commands print `42`. `--fresh` clears cached compiler and LLVM
-paths when changing toolchain versions. Exit an old development shell before
-entering the updated one.
-
-Check a program without generating IR:
-
-```sh
-./build/faust --check examples/hello.faust
-./build/faust --check examples/contract_error.faust
-```
-
-The second command deliberately fails: `main` has not declared the syscalls
-required by `report`. Diagnostics include the source path, line, and column.
-Without `-o`, the compiler writes IR to standard output. Invalid programs do
-not generate IR.
+Faust explores whether explicit effect contracts can make systems code safer.
+Every function declares an upper bound on its system effects — which syscalls
+it may invoke and whether it may contain inline assembly. The compiler enforces
+these contracts at every call site, transitively, so a wrapper cannot hide the
+effects of the functions it calls. The goal is not a sandbox or a proof system,
+but a lightweight, composable way to reason about what a function can do.
 
 ## Syscall contracts
 
@@ -101,28 +63,43 @@ sandbox, memory budgets, a capability token system, a termination proof, or
 memory safety guarantees. Stack use, runtime startup, and execution time are
 not tracked. In particular, a function without `asm` can still recurse forever.
 
-## Current language
+## Language documentation
 
-- Functions use `fn name(parameter: i32) -> i32`, with an optional contract.
-- Types: `i32`, `bool`. Pointers use `*T` syntax (currently mapped to `i32`).
-- `let name = expression;` creates an immutable local. Assignment `x = expr;`
-  mutates an existing variable.
-- Expressions support calls, parentheses, unary `-`, `!`, binary `+`, `-`,
-  `*`, comparisons (`<`, `>`, `<=`, `>=`, `==`, `!=`), and logical operators
-  (`&&`, `||`). Logical operators use short-circuit evaluation.
-- `if`/`else` statements with `else if` chains.
-- `while` loops with phi nodes for loop-carried variables.
-- `asm` blocks for inline assembly.
-- `extern` declarations for C functions with syscall contracts.
-- Arithmetic wraps modulo 2^32. Literals must fit in `i32`, including `-2147483648`.
-- Every function must end with `return expression;`; statements after a return
-  are rejected.
-- `//` starts a line comment. Programs must define `main() -> i32`.
+See [docs/docs.md](docs/docs.md) for the full language specification.
 
-The compiler intentionally starts small. It does not yet implement strings,
-heap allocation, structures, modules, or ownership. The next design work can
-build on the syscall contract checker before expanding the systems programming
-surface.
+## Build and run
+
+Install Nix with the `nix-command` and `flakes` experimental features enabled.
+The flake provides LLVM 22, Clang, clangd, LLD, LLDB, CMake, Ninja, and Python
+for tests. Environments are exposed for x86_64 and aarch64 Linux and macOS;
+execution has been tested on x86_64 Linux.
+
+```sh
+nix develop
+cmake --fresh -S . -B build -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
+./build/faust examples/hello.faust -o build/hello.ll
+lli build/hello.ll
+clang -Wno-unused-command-line-argument -Wno-override-module build/hello.ll -o build/hello
+./build/hello
+```
+
+Both execution commands print `42`. `--fresh` clears cached compiler and LLVM
+paths when changing toolchain versions. Exit an old development shell before
+entering the updated one.
+
+Check a program without generating IR:
+
+```sh
+./build/faust --check examples/hello.faust
+./build/faust --check examples/contract_error.faust
+```
+
+The second command deliberately fails: `main` has not declared the syscalls
+required by `report`. Diagnostics include the source path, line, and column.
+Without `-o`, the compiler writes IR to standard output. Invalid programs do
+not generate IR.
 
 ## Compiler structure
 
