@@ -375,6 +375,38 @@ class CompilerTests(unittest.TestCase):
                      "let xs = [4, 5, 6]; let p: *i32 = get_second(xs); print(*p); return 0; }",
                      "5\n")
 
+    def test_array_decay_in_typed_let(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "let xs = [11, 22]; let p: *i32 = xs; print(p[1]); return 0; }",
+                     "22\n")
+
+    def test_array_decay_in_assignment(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "let xs = [7, 8]; let p: *i32 = 0; p = xs; print(*p); return 0; }",
+                     "7\n")
+
+    def test_array_decay_in_return(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn data(p: *i32) -> *i32 { return p; }\n"
+                     "fn first(xs: *i32) -> i32 { return *xs; }\n"
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "let xs = [31, 32]; print(first(xs)); return 0; }",
+                     "31\n")
+
+    def test_null_pointer_literal(self):
+        self.execute("fn main() -> i32 { let p: *i32 = 0; return 0; }", "")
+
+    def test_integer_literal_conversion_in_call(self):
+        self.execute("fn narrow(x: i8) -> i32 { return x; }\n"
+                     "fn main() -> i32 { return narrow(42); }", "")
+
+    def test_integer_literal_call_range_rejected(self):
+        self.reject("fn narrow(x: i8) -> i32 { return x; }\n"
+                    "fn main() -> i32 { return narrow(256); }",
+                    "outside the range of i8")
+
     def test_extern_declaration(self):
         self.execute("extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};\n"
                      "fn main() -> i32 !{asm, syscalls 1} {\n"
