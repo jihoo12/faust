@@ -254,3 +254,20 @@ fn main() -> i32 !{extern} {
 - No modules, generics, ADTs, ownership system, or inductive types
 - No runtime array/pointer bounds checks
 - No floating-point literals in source (use integer literals with type annotations)
+
+
+## Source includes
+
+A Faust source file can include declarations from another source file with:
+
+```faust
+include "lib.faust";
+
+fn main() -> i32 {
+  return helper();
+}
+```
+
+Include paths are resolved relative to the file containing the `include` statement.
+Includes may be nested. A source file included more than once is loaded only once, and
+cyclic include chains are rejected.
