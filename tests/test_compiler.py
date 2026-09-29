@@ -267,6 +267,16 @@ class CompilerTests(unittest.TestCase):
                      "fn main() -> i32 !{asm, syscalls 1} {\n"
                      "return write(1, 0, 0); }", "")
 
+    def test_string_literal_is_pointer_typed(self):
+        self.execute("extern puts(s: *i8) -> i32 !{asm, syscalls 1};\n"
+                     "fn main() -> i32 !{asm, syscalls 1} { puts(\"hello\"); return 0; }",
+                     "hello\n")
+
+    def test_string_literal_rejected_for_integer_param(self):
+        self.reject("fn takes_int(x: i32) -> i32 { return x; }\n"
+                    "fn main() -> i32 { return takes_int(\"hello\"); }",
+                    "wrong type for argument 1")
+
     def test_extern_requires_syscall_contract(self):
         self.reject("extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};\n"
                     "fn main() -> i32 { return write(1, 0, 0); }",
