@@ -84,6 +84,11 @@ class Generator {
   llvm::Value *emitArrayAddress(const Expr &expr) {
     if (expr.kind == Expr::String)
       return builder.CreateGlobalString(decodeStringLiteral(expr.token));
+    if (expr.kind == Expr::ArrayLiteral) {
+      auto *slot = builder.CreateAlloca(llvmType(expr.type));
+      builder.CreateStore(emitExpr(expr), slot);
+      return slot;
+    }
     return emitAddress(expr);
   }
 
