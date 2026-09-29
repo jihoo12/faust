@@ -299,6 +299,11 @@ class CompilerTests(unittest.TestCase):
         body = ir.split("define internal i32 @faust.value", 1)[1].split("}", 1)[0]
         self.assertIn("alloca i32", body)
 
+    def test_field_access_reaches_parser(self):
+        self.reject(
+            "fn main() -> i32 { let x = 1; return x.value; }",
+            "field access requires struct type")
+
     def test_struct_literal_and_field_read(self):
         self.execute(
             "struct Point { x: i32, y: i32 }\n"
