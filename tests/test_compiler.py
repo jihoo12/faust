@@ -400,11 +400,10 @@ class CompilerTests(unittest.TestCase):
                      "let xs = [4, 5, 6]; let p: *i32 = get_second(xs); print(*p); return 0; }",
                      "5\n")
 
-    def test_array_literal_decays_to_pointer_argument(self):
-        self.execute(PRINT_WRAPPER +
-                     "fn first(p: *i32) -> i32 { return p[0]; }\n"
-                     "fn main() -> i32 !{extern, asm, syscalls 1} { print(first([41, 42])); return 0; }",
-                     "41\n")
+    def test_array_literal_does_not_create_hidden_storage(self):
+        self.reject("fn first(p: *i32) -> i32 { return p[0]; }\n"
+                    "fn main() -> i32 { first([41, 42]); return 0; }",
+                    "wrong type for argument 1")
 
     def test_array_decay_in_typed_let(self):
         self.execute(PRINT_WRAPPER +
