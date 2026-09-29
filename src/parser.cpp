@@ -96,14 +96,17 @@ class Parser {
           }
           if (!function.syscalls.insert(syscall).second)
             fail(num, "duplicate syscall " + num.text);
-          if (accept(",") && peek().text != "asm")
+          if (accept(",") && peek().text != "asm" &&
+              peek().text != "extern")
             continue;
           break;
         }
       } else if (accept("asm")) {
         function.hasAsm = true;
+      } else if (accept("extern")) {
+        function.hasExtern = true;
       } else {
-        fail(peek(), "expected 'syscalls' or 'asm'");
+        fail(peek(), "expected 'syscalls', 'asm', or 'extern'");
       }
     } while (accept(","));
     expect("}");
