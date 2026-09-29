@@ -131,6 +131,25 @@ class Generator {
     return value;
   }
 
+  llvm::Value *emitVariadicArgument(const Expr &expr) {
+    if (expr.type.kind == Type::Array)
+      return emitArrayDecay(expr);
+
+    auto *value = emitExpr(expr);
+    switch (expr.type.kind) {
+    case Type::I8:
+    case Type::I16:
+      return builder.CreateSExt(value, builder.getInt32Ty());
+    case Type::U8:
+    case Type::U16:
+      return builder.CreateZExt(value, builder.getInt32Ty());
+    case Type::F32:
+      return builder.CreateFPExt(value, builder.getDoubleTy());
+    default:
+      return value;
+    }
+  }
+
   llvm::Value *emitExpr(const Expr &expr) {
     switch (expr.kind) {
     case Expr::Integer: {
@@ -259,7 +278,7 @@ class Generator {
           arguments.push_back(emitConverted(
               child, callee->getFunctionType()->getParamType(i)));
         else
-          arguments.push_back(emitExpr(child));
+          arguments.push_back(emitVariadicArgument(child));
       }
       return builder.CreateCall(callee, arguments);
     }

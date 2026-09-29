@@ -465,6 +465,27 @@ class CompilerTests(unittest.TestCase):
                      "fn main() -> i32 !{asm, syscalls 1} { printf(\"a\\tb\\n\"); return 0; }",
                      "a\tb\n")
 
+    def test_variadic_string_literal_decays_to_pointer(self):
+        self.execute("extern printf(fmt: *i8, ...) -> i32 !{asm, syscalls 1};\n"
+                     "fn main() -> i32 !{asm, syscalls 1} { printf(\"%s\\n\", \"hello\"); return 0; }",
+                     "hello\n")
+
+    def test_variadic_small_integer_promotions_in_ir(self):
+        result = self.compile(
+            "extern sink(tag: i32, ...) -> i32;\n"
+            "fn main() -> i32 { let a: i8 = 1; let b: u8 = 2; sink(0, a, b); return 0; }")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        ir = self.ir.read_text()
+        self.assertIn("sext i8", ir)
+        self.assertIn("zext i8", ir)
+
+    def test_variadic_f32_promotes_to_f64_in_ir(self):
+        result = self.compile(
+            "extern sink(tag: i32, ...) -> i32;\n"
+            "fn main() -> i32 { let x: f32 = 1; sink(0, x); return 0; }")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("fpext float", self.ir.read_text())
+
     def test_string_literal_rejected_for_wrong_pointer_element_type(self):
         self.reject("extern takes_i32_ptr(p: *i32) -> i32 !{asm, syscalls 1};\n"
                     "fn main() -> i32 !{asm, syscalls 1} { return takes_i32_ptr(\"hello\"); }",
