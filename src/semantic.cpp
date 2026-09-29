@@ -45,6 +45,11 @@ bool canImplicitlyConvert(const Expr &expr, const Type &target) {
   return false;
 }
 
+bool isAssignable(const Expr &expr) {
+  return expr.kind == Expr::Variable || expr.kind == Expr::Dereference ||
+         expr.kind == Expr::Index;
+}
+
 bool fitsInRange(int64_t value, Type type) {
   switch (type.kind) {
   case Type::I8: return value >= -128 && value <= 127;
@@ -151,8 +156,8 @@ void checkExpr(Expr &expr, const Function &function,
     break;
   case Expr::AddressOf:
     checkExpr(*expr.children[0], function, locals, signatures);
-    if (expr.children[0]->kind != Expr::Variable)
-      fail(expr.token, "'&' requires an addressable variable");
+    if (!isAssignable(*expr.children[0]))
+      fail(expr.token, "'&' requires an addressable expression");
     expr.type = Type::pointer(expr.children[0]->type);
     break;
   case Expr::Dereference:
@@ -273,31 +278,13 @@ void checkStatement(Statement &statement, const Function &function,
       locals = saved;
     }
     break;
-  case Statement::Assign: {
-    auto found = locals.find(statement.token.text);
-    if (found == locals.end())
-      fail(statement.token,
-           "unknown variable '" + statement.token.text + "'");
-    checkExpr(*statement.expression, function, locals, signatures);
-    if (statement.expression->type != found->second)
-      fail(statement.token, "assignment type mismatch");
-    break;
-  }
-  case Statement::Store:
+  case Statement::Assign:
     checkExpr(*statement.condition, function, locals, signatures);
-    if (statement.condition->type.kind != Type::Pointer ||
-        !statement.condition->type.element)
-      fail(statement.token, "pointer assignment requires pointer type");
-    checkExpr(*statement.expression, function, locals, signatures);
-    if (!canImplicitlyConvert(*statement.expression,
-                              *statement.condition->type.element))
-      fail(statement.token, "pointer assignment type mismatch");
-    break;
-  case Statement::IndexStore:
-    checkExpr(*statement.condition, function, locals, signatures);
+    if (!isAssignable(*statement.condition))
+      fail(statement.token, "left side of assignment is not assignable");
     checkExpr(*statement.expression, function, locals, signatures);
     if (!canImplicitlyConvert(*statement.expression, statement.condition->type))
-      fail(statement.token, "array element assignment type mismatch");
+      fail(statement.token, "assignment type mismatch");
     break;
   case Statement::Asm:
     if (!function.hasAsm)
