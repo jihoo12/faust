@@ -1,5 +1,6 @@
 #include "faust/semantic.h"
 #include "faust/diagnostic.h"
+#include "faust/string_literal.h"
 
 #include <map>
 #include <set>
@@ -29,6 +30,19 @@ bool isIntegerType(Type type) {
 
 bool isFloatType(Type type) {
   return type.kind == Type::F32 || type.kind == Type::F64;
+}
+
+bool canImplicitlyConvert(const Expr &expr, const Type &target) {
+  if (expr.type == target)
+    return true;
+  if (expr.type.kind == Type::Array && target.kind == Type::Pointer &&
+      expr.type.element && target.element &&
+      *expr.type.element == *target.element)
+    return true;
+  if (expr.kind == Expr::Integer && expr.value == 0 &&
+      target.kind == Type::Pointer)
+    return true;
+  return false;
 }
 
 bool fitsInRange(int64_t value, Type type) {
@@ -75,17 +89,9 @@ void checkExpr(Expr &expr, const Function &function,
   case Expr::Boolean:
     expr.type = Type::Bool;
     break;
-  case Expr::String: {
-    size_t length = 1;
-    const std::string &text = expr.token.text;
-    for (size_t i = 1; i + 1 < text.size(); ++i) {
-      if (text[i] == '\\' && i + 2 < text.size())
-        ++i;
-      ++length;
-    }
-    expr.type = Type::array(Type::I8, length);
+  case Expr::String:
+    expr.type = Type::array(Type::I8, decodeStringLiteral(expr.token).size() + 1);
     break;
-  }
   case Expr::Variable: {
     auto found = locals.find(expr.token.text);
     if (found == locals.end())
@@ -112,23 +118,10 @@ void checkExpr(Expr &expr, const Function &function,
                             function.name.text + "'");
     for (size_t i = 0; i < found->second.paramTypes.size(); ++i) {
       checkExpr(*expr.children[i], function, locals, signatures);
-      if (expr.children[i]->type != found->second.paramTypes[i]) {
-        const Type &expected = found->second.paramTypes[i];
-        Type &actual = expr.children[i]->type;
-        bool isArrayDecay = expected.kind == Type::Pointer &&
-                            actual.kind == Type::Array &&
-                            expected.element && actual.element &&
-                            *expected.element == *actual.element;
-        bool isNullPointer = expected.kind == Type::Pointer &&
-                             expr.children[i]->kind == Expr::Integer &&
-                             expr.children[i]->value == 0;
-        if (isArrayDecay)
-          expr.children[i]->decayToPointer = true;
-        else if (!isNullPointer)
-          fail(expr.children[i]->token,
-               "wrong type for argument " + std::to_string(i + 1) + " to '" +
-                   expr.token.text + "'");
-      }
+      if (!canImplicitlyConvert(*expr.children[i], found->second.paramTypes[i]))
+        fail(expr.children[i]->token,
+             "wrong type for argument " + std::to_string(i + 1) + " to '" +
+                 expr.token.text + "'");
     }
     for (size_t i = found->second.paramTypes.size(); i < expr.children.size(); ++i)
       checkExpr(*expr.children[i], function, locals, signatures);
