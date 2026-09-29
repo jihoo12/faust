@@ -1,5 +1,6 @@
 #include "faust/codegen.h"
 #include "faust/ir.h"
+#include "faust/string_literal.h"
 
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/InlineAsm.h>
@@ -56,26 +57,8 @@ class Generator {
     }
     case Expr::Boolean:
       return builder.getInt1(expr.value != 0);
-    case Expr::String: {
-      std::string text = expr.token.text;
-      if (text.size() >= 2 && text.front() == '"' && text.back() == '"')
-        text = text.substr(1, text.size() - 2);
-      std::string processed;
-      for (size_t i = 0; i < text.size(); ++i) {
-        if (text[i] == '\\' && i + 1 < text.size()) {
-          ++i;
-          if (text[i] == 'n') processed += '\n';
-          else if (text[i] == 't') processed += '\t';
-          else if (text[i] == 'r') processed += '\r';
-          else if (text[i] == '\\') processed += '\\';
-          else if (text[i] == '"') processed += '"';
-          else processed += text[i];
-        } else {
-          processed += text[i];
-        }
-      }
-      return builder.CreateGlobalString(processed);
-    }
+    case Expr::String:
+      return builder.CreateGlobalString(decodeStringLiteral(expr.token));
     case Expr::Variable:
       return locals.at(expr.token.text);
     case Expr::Negate:
