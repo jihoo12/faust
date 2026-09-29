@@ -283,7 +283,7 @@ class CompilerTests(unittest.TestCase):
 
     def test_address_of_rvalue_rejected(self):
         self.reject("fn main() -> i32 { let p = &(1 + 2); return 0; }",
-                    "'&' requires an addressable variable")
+                    "'&' requires an addressable expression")
 
     def test_dereference_non_pointer_rejected(self):
         self.reject("fn main() -> i32 { let x = *42; return 0; }",
