@@ -313,7 +313,7 @@ class CompilerTests(unittest.TestCase):
 
     def test_array_index_type_rejected(self):
         self.reject("fn main() -> i32 { let xs = [1, 2]; let x = xs[true]; return 0; }",
-                    "array index must be an integer")
+                    "index must be an integer")
 
     def test_empty_array_rejected_without_context(self):
         self.reject("fn main() -> i32 { let xs = []; return 0; }",
@@ -353,6 +353,27 @@ class CompilerTests(unittest.TestCase):
     def test_non_lvalue_assignment_rejected(self):
         self.reject("fn main() -> i32 { (1 + 2) = 3; return 0; }",
                     "left side of assignment is not assignable")
+
+    def test_pointer_index_read(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn second(p: *i32) -> i32 { return p[1]; }\n"
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "let xs = [10, 20, 30]; print(second(xs)); return 0; }",
+                     "20\n")
+
+    def test_pointer_index_write(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn set_second(p: *i32) -> i32 { p[1] = 42; return 0; }\n"
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "let xs = [1, 2, 3]; set_second(xs); print(xs[1]); return 0; }",
+                     "42\n")
+
+    def test_address_of_pointer_index(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn get_second(p: *i32) -> *i32 { return &p[1]; }\n"
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "let xs = [4, 5, 6]; let p: *i32 = get_second(xs); print(*p); return 0; }",
+                     "5\n")
 
     def test_extern_declaration(self):
         self.execute("extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};\n"

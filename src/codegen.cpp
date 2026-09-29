@@ -66,12 +66,14 @@ class Generator {
       return emitExpr(*expr.children[0]);
     case Expr::Index: {
       const Expr &base = *expr.children[0];
-      auto *baseAddress = emitAddress(base);
       auto *index = emitExpr(*expr.children[1]);
       if (!index->getType()->isIntegerTy(64))
         index = builder.CreateIntCast(index, builder.getInt64Ty(), true);
+      if (base.type.kind == Type::Pointer)
+        return builder.CreateInBoundsGEP(
+            llvmType(*base.type.element), emitExpr(base), index);
       return builder.CreateInBoundsGEP(
-          llvmType(base.type), baseAddress,
+          llvmType(base.type), emitAddress(base),
           {builder.getInt64(0), index});
     }
     default:

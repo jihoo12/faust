@@ -147,11 +147,12 @@ void checkExpr(Expr &expr, const Function &function,
   case Expr::Index:
     checkExpr(*expr.children[0], function, locals, signatures);
     checkExpr(*expr.children[1], function, locals, signatures);
-    if (expr.children[0]->type.kind != Type::Array ||
+    if ((expr.children[0]->type.kind != Type::Array &&
+         expr.children[0]->type.kind != Type::Pointer) ||
         !expr.children[0]->type.element)
-      fail(expr.token, "indexing requires array type");
+      fail(expr.token, "indexing requires array or pointer type");
     if (!isIntegerType(expr.children[1]->type))
-      fail(expr.children[1]->token, "array index must be an integer");
+      fail(expr.children[1]->token, "index must be an integer");
     expr.type = *expr.children[0]->type.element;
     break;
   case Expr::AddressOf:
