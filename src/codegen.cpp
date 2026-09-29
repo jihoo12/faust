@@ -151,14 +151,25 @@ class Generator {
       auto *pointer = emitExpr(*expr.children[0]);
       return builder.CreateLoad(llvmType(expr.type), pointer);
     }
-    case Expr::Negate:
-      return builder.CreateNeg(emitExpr(*expr.children[0]));
+    case Expr::Negate: {
+      auto *value = emitExpr(*expr.children[0]);
+      if (isFloatType(expr.type))
+        return builder.CreateFNeg(value);
+      return builder.CreateNeg(value);
+    }
     case Expr::Not:
       return builder.CreateXor(emitExpr(*expr.children[0]),
                                builder.getInt1(true));
     case Expr::Binary: {
       auto *left = emitExpr(*expr.children[0]);
       auto *right = emitExpr(*expr.children[1]);
+      if (isFloatType(expr.type)) {
+        if (expr.token.text == "+")
+          return builder.CreateFAdd(left, right);
+        if (expr.token.text == "-")
+          return builder.CreateFSub(left, right);
+        return builder.CreateFMul(left, right);
+      }
       if (expr.token.text == "+")
         return builder.CreateAdd(left, right);
       if (expr.token.text == "-")
@@ -168,6 +179,19 @@ class Generator {
     case Expr::Compare: {
       auto *left = emitExpr(*expr.children[0]);
       auto *right = emitExpr(*expr.children[1]);
+      if (isFloatType(expr.children[0]->type)) {
+        if (expr.token.text == "<")
+          return builder.CreateFCmpOLT(left, right);
+        if (expr.token.text == ">")
+          return builder.CreateFCmpOGT(left, right);
+        if (expr.token.text == "<=")
+          return builder.CreateFCmpOLE(left, right);
+        if (expr.token.text == ">=")
+          return builder.CreateFCmpOGE(left, right);
+        if (expr.token.text == "==")
+          return builder.CreateFCmpOEQ(left, right);
+        return builder.CreateFCmpUNE(left, right);
+      }
       if (expr.token.text == "<")
         return builder.CreateICmpSLT(left, right);
       if (expr.token.text == ">")
