@@ -29,6 +29,7 @@ class Generator {
   llvm::IRBuilder<> builder{context};
   std::map<std::string, llvm::Function *> functions;
   std::map<std::string, llvm::AllocaInst *> locals;
+  std::map<std::string, llvm::Value *> values;
   llvm::Function *currentFunction = nullptr;
 
   llvm::Type *llvmType(Type type) {
@@ -158,6 +159,9 @@ class Generator {
     case Expr::String:
       return builder.CreateLoad(llvmType(expr.type), emitArrayAddress(expr));
     case Expr::Variable: {
+      auto value = values.find(expr.token.text);
+      if (value != values.end())
+        return value->second;
       auto *slot = locals.at(expr.token.text);
       return builder.CreateLoad(slot->getAllocatedType(), slot, expr.token.text);
     }
@@ -284,11 +288,18 @@ class Generator {
   void emitStatement(const Statement &statement, const Function &function) {
     switch (statement.kind) {
     case Statement::Let: {
-      auto *slot = builder.CreateAlloca(llvmType(statement.type), nullptr,
-                                        statement.token.text);
-      builder.CreateStore(
-          emitConverted(*statement.expression, llvmType(statement.type)), slot);
-      locals[statement.token.text] = slot;
+      auto *value =
+          emitConverted(*statement.expression, llvmType(statement.type));
+      bool needsStorage = function.storedLocals.count(statement.token.text) ||
+                          statement.type.kind == Type::Array;
+      if (needsStorage) {
+        auto *slot = builder.CreateAlloca(llvmType(statement.type), nullptr,
+                                          statement.token.text);
+        builder.CreateStore(value, slot);
+        locals[statement.token.text] = slot;
+      } else {
+        values[statement.token.text] = value;
+      }
       break;
     }
     case Statement::Evaluate:
@@ -392,12 +403,19 @@ public:
       builder.SetInsertPoint(
           llvm::BasicBlock::Create(context, "entry", target));
       locals.clear();
+      values.clear();
       for (size_t i = 0; i < function.parameters.size(); ++i) {
         target->getArg(i)->setName(function.parameters[i].text);
-        auto *slot = builder.CreateAlloca(llvmType(function.paramTypes[i]), nullptr,
-                                          function.parameters[i].text);
-        builder.CreateStore(target->getArg(i), slot);
-        locals[function.parameters[i].text] = slot;
+        if (function.storedLocals.count(function.parameters[i].text) ||
+            function.paramTypes[i].kind == Type::Array) {
+          auto *slot =
+              builder.CreateAlloca(llvmType(function.paramTypes[i]), nullptr,
+                                   function.parameters[i].text);
+          builder.CreateStore(target->getArg(i), slot);
+          locals[function.parameters[i].text] = slot;
+        } else {
+          values[function.parameters[i].text] = target->getArg(i);
+        }
       }
       for (const auto &statement : function.body)
         emitStatement(statement, function);
