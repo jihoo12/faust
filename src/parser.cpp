@@ -59,10 +59,9 @@ class Parser {
     if (accept("f64")) return Type::F64;
     if (accept("bool")) return Type::Bool;
     if (accept("void")) return Type::Void;
-    if (peek().text == "*") {
-      take();
+    if (accept("*")) {
       parseType();
-      return Type::I32;
+      return Type::Pointer;
     }
     fail(peek(), "expected a type");
   }
@@ -340,13 +339,7 @@ public:
           }
           function.parameters.push_back(identifier());
           expect(":");
-          bool isPointer = false;
-          if (peek().text == "*") {
-            take();
-            isPointer = true;
-          }
           function.paramTypes.push_back(parseType());
-          function.paramIsPointer.push_back(isPointer);
           if (!accept(","))
             break;
         }
