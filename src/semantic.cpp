@@ -7,6 +7,8 @@
 
 namespace faust {
 namespace {
+const std::map<std::string, const StructDecl *> *structDecls = nullptr;
+
 struct Signature {
   std::vector<Type> paramTypes;
   Type returnType;
@@ -57,7 +59,7 @@ bool canImplicitlyConvert(const Expr &expr, const Type &target) {
 
 bool isAssignable(const Expr &expr) {
   return expr.kind == Expr::Variable || expr.kind == Expr::Dereference ||
-         expr.kind == Expr::Index;
+         expr.kind == Expr::Index || expr.kind == Expr::Field;
 }
 
 bool fitsInRange(int64_t value, Type type) {
@@ -89,6 +91,7 @@ const char *typeName(Type type) {
   case Type::Bool: return "bool";
   case Type::Pointer: return "pointer";
   case Type::Array: return "array";
+  case Type::Struct: return "struct";
   case Type::Void: return "void";
   }
   return "unknown";
@@ -168,6 +171,55 @@ void checkExpr(Expr &expr, const Function &function,
     }
     expr.type = Type::array(expr.children[0]->type, expr.children.size());
     break;
+  case Expr::StructLiteral: {
+    auto found = structDecls->find(expr.token.text);
+    if (found == structDecls->end())
+      fail(expr.token, "unknown struct '" + expr.token.text + "'");
+    const auto &decl = *found->second;
+    if (expr.children.size() != decl.fields.size())
+      fail(expr.token, "wrong number of fields for '" + expr.token.text + "'");
+    std::set<std::string> seen;
+    for (size_t i = 0; i < expr.children.size(); ++i) {
+      const std::string &name = expr.names[i].text;
+      if (!seen.insert(name).second)
+        fail(expr.names[i], "duplicate field '" + name + "'");
+      size_t field = decl.fields.size();
+      for (size_t j = 0; j < decl.fields.size(); ++j)
+        if (decl.fields[j].text == name) {
+          field = j;
+          break;
+        }
+      if (field == decl.fields.size())
+        fail(expr.names[i], "unknown field '" + name + "' in '" +
+                                expr.token.text + "'");
+      checkExpr(*expr.children[i], function, locals, signatures);
+      requireImplicitConversion(*expr.children[i], decl.fieldTypes[field],
+                                expr.names[i], "wrong type for field '" + name + "'");
+    }
+    expr.type = Type::structure(expr.token.text);
+    break;
+  }
+  case Expr::Field: {
+    checkExpr(*expr.children[0], function, locals, signatures);
+    if (expr.children[0]->type.kind != Type::Struct)
+      fail(expr.token, "field access requires struct type");
+    auto found = structDecls->find(expr.children[0]->type.name);
+    if (found == structDecls->end())
+      fail(expr.token, "unknown struct '" + expr.children[0]->type.name + "'");
+    const auto &decl = *found->second;
+    size_t field = decl.fields.size();
+    for (size_t i = 0; i < decl.fields.size(); ++i)
+      if (decl.fields[i].text == expr.token.text) {
+        field = i;
+        break;
+      }
+    if (field == decl.fields.size())
+      fail(expr.token, "unknown field '" + expr.token.text + "' in '" +
+                           decl.name.text + "'");
+    expr.value = static_cast<int32_t>(field);
+    expr.type = decl.fieldTypes[field];
+    break;
+  }
   case Expr::Index:
     checkExpr(*expr.children[0], function, locals, signatures);
     checkExpr(*expr.children[1], function, locals, signatures);
@@ -306,10 +358,19 @@ void checkStatement(Statement &statement, const Function &function,
 }
 
 
+void markStorageBase(const Expr &expr, std::set<std::string> &stored) {
+  if (expr.kind == Expr::Variable) {
+    stored.insert(expr.token.text);
+    return;
+  }
+  if ((expr.kind == Expr::Field || expr.kind == Expr::Index) &&
+      !expr.children.empty())
+    markStorageBase(*expr.children[0], stored);
+}
+
 void collectStoredExpr(const Expr &expr, std::set<std::string> &stored) {
-  if (expr.kind == Expr::AddressOf && !expr.children.empty() &&
-      expr.children[0]->kind == Expr::Variable)
-    stored.insert(expr.children[0]->token.text);
+  if (expr.kind == Expr::AddressOf && !expr.children.empty())
+    markStorageBase(*expr.children[0], stored);
   for (const auto &child : expr.children)
     collectStoredExpr(*child, stored);
 }
@@ -317,9 +378,8 @@ void collectStoredExpr(const Expr &expr, std::set<std::string> &stored) {
 void collectStoredStatements(const std::vector<Statement> &statements,
                              std::set<std::string> &stored) {
   for (const auto &statement : statements) {
-    if (statement.kind == Statement::Assign && statement.condition &&
-        statement.condition->kind == Expr::Variable)
-      stored.insert(statement.condition->token.text);
+    if (statement.kind == Statement::Assign && statement.condition)
+      markStorageBase(*statement.condition, stored);
     if (statement.expression)
       collectStoredExpr(*statement.expression, stored);
     if (statement.condition)
@@ -331,9 +391,32 @@ void collectStoredStatements(const std::vector<Statement> &statements,
 
 } // namespace
 
-void check(Program &functions) {
+void check(Program &program) {
+  std::map<std::string, const StructDecl *> structs;
+  for (const auto &decl : program.structs) {
+    if (!structs.emplace(decl.name.text, &decl).second)
+      fail(decl.name, "duplicate struct '" + decl.name.text + "'");
+    std::set<std::string> fields;
+    for (const auto &field : decl.fields)
+      if (!fields.insert(field.text).second)
+        fail(field, "duplicate field '" + field.text + "'");
+  }
+  structDecls = &structs;
+  auto validateType = [&](const Type &type, const Token &token, const auto &self) -> void {
+    if (type.kind == Type::Struct && !structs.count(type.name))
+      fail(token, "unknown struct '" + type.name + "'");
+    if (type.element)
+      self(*type.element, token, self);
+  };
+  for (const auto &decl : program.structs)
+    for (const auto &type : decl.fieldTypes)
+      validateType(type, decl.name, validateType);
+
   std::map<std::string, Signature> signatures;
-  for (const auto &function : functions) {
+  for (const auto &function : program.functions) {
+    for (const auto &type : function.paramTypes)
+      validateType(type, function.name, validateType);
+    validateType(function.returnType, function.name, validateType);
     if (!signatures
              .emplace(function.name.text,
                       Signature{function.paramTypes, function.returnType, function.syscalls,
@@ -349,7 +432,7 @@ void check(Program &functions) {
     fail(Token{}, "program must define main");
   if (!main->second.paramTypes.empty())
     fail(Token{}, "main must have no parameters");
-  for (auto &function : functions) {
+  for (auto &function : program.functions) {
     if (function.isExtern)
       continue;
     if (!function.syscalls.empty() && !function.hasAsm)

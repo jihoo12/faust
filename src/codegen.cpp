@@ -28,6 +28,8 @@ class Generator {
   llvm::Module module{"faust", context};
   llvm::IRBuilder<> builder{context};
   std::map<std::string, llvm::Function *> functions;
+  std::map<std::string, llvm::StructType *> structTypes;
+  std::map<std::string, const StructDecl *> structDecls;
   std::map<std::string, llvm::AllocaInst *> locals;
   std::map<std::string, llvm::Value *> values;
   llvm::Function *currentFunction = nullptr;
@@ -48,6 +50,7 @@ class Generator {
     case Type::Pointer: return builder.getPtrTy();
     case Type::Array:
       return llvm::ArrayType::get(llvmType(*type.element), type.length);
+    case Type::Struct: return structTypes.at(type.name);
     case Type::Void: return builder.getVoidTy();
     }
     return builder.getInt32Ty();
@@ -74,6 +77,11 @@ class Generator {
       return locals.at(expr.token.text);
     case Expr::Dereference:
       return emitExpr(*expr.children[0]);
+    case Expr::Field: {
+      const Expr &base = *expr.children[0];
+      return builder.CreateStructGEP(llvmType(base.type), emitAddress(base),
+                                     static_cast<unsigned>(expr.value));
+    }
     case Expr::Index: {
       const Expr &base = *expr.children[0];
       auto *index = emitExpr(*expr.children[1]);
@@ -175,6 +183,25 @@ class Generator {
             {static_cast<unsigned>(i)});
       return value;
     }
+    case Expr::StructLiteral: {
+      auto *structType = llvmType(expr.type);
+      llvm::Value *value = llvm::UndefValue::get(structType);
+      const auto &decl = *structDecls.at(expr.type.name);
+      for (size_t i = 0; i < expr.children.size(); ++i) {
+        size_t field = 0;
+        while (decl.fields[field].text != expr.names[i].text)
+          ++field;
+        value = builder.CreateInsertValue(
+            value,
+            convertValue(emitExpr(*expr.children[i]), expr.children[i]->type,
+                         decl.fieldTypes[field]),
+            {static_cast<unsigned>(field)});
+      }
+      return value;
+    }
+    case Expr::Field:
+      return builder.CreateExtractValue(emitExpr(*expr.children[0]),
+                                        {static_cast<unsigned>(expr.value)});
     case Expr::Index:
       return builder.CreateLoad(llvmType(expr.type), emitAddress(expr));
     case Expr::AddressOf:
@@ -378,8 +405,19 @@ class Generator {
   }
 
 public:
-  std::string generate(const std::vector<Function> &program) {
-    for (const auto &function : program) {
+  std::string generate(const Program &program) {
+    for (const auto &decl : program.structs) {
+      structTypes[decl.name.text] =
+          llvm::StructType::create(context, "faust." + decl.name.text);
+      structDecls[decl.name.text] = &decl;
+    }
+    for (const auto &decl : program.structs) {
+      std::vector<llvm::Type *> fields;
+      for (const auto &type : decl.fieldTypes)
+        fields.push_back(llvmType(type));
+      structTypes.at(decl.name.text)->setBody(fields);
+    }
+    for (const auto &function : program.functions) {
       std::vector<llvm::Type *> parameters;
       for (Type type : function.paramTypes)
         parameters.push_back(llvmType(type));
@@ -395,7 +433,7 @@ public:
       functions[function.name.text] = llvm::Function::Create(
           type, linkage, irName, module);
     }
-    for (const auto &function : program) {
+    for (const auto &function : program.functions) {
       if (function.isExtern)
         continue;
       auto *target = functions.at(function.name.text);

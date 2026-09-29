@@ -36,7 +36,7 @@ class Parser {
         t.text == "f64" || t.text == "bool" || t.text == "void" ||
         t.text == "if" || t.text == "else" || t.text == "while" ||
         t.text == "true" || t.text == "false" || t.text == "extern" ||
-        t.text == "asm")
+        t.text == "asm" || t.text == "struct")
       return false;
     return true;
   }
@@ -72,6 +72,8 @@ class Parser {
     if (accept("void")) return Type::Void;
     if (accept("*"))
       return Type::pointer(parseType());
+    if (isIdentifier(peek()))
+      return Type::structure(identifier().text);
     fail(peek(), "expected a type");
   }
   void parseContract(Function &function) {
@@ -176,21 +178,45 @@ class Parser {
         } while (accept(","));
         expect(")");
       }
+    } else if (peek().text == "{" &&
+               ((pos + 1 < tokens.size() && tokens[pos + 1].text == "}") ||
+                (pos + 2 < tokens.size() && isIdentifier(tokens[pos + 1]) &&
+                 tokens[pos + 2].text == ":"))) {
+      take();
+      result->kind = Expr::StructLiteral;
+      if (!accept("}")) {
+        do {
+          result->names.push_back(identifier());
+          expect(":");
+          result->children.push_back(expression());
+        } while (accept(","));
+        expect("}");
+      }
     }
     return result;
   }
 
   std::unique_ptr<Expr> postfix() {
     auto result = primary();
-    while (accept("[")) {
-      Token bracket = tokens[pos - 1];
-      auto index = std::make_unique<Expr>();
-      index->kind = Expr::Index;
-      index->token = bracket;
-      index->children.push_back(std::move(result));
-      index->children.push_back(expression());
-      expect("]");
-      result = std::move(index);
+    while (true) {
+      if (accept("[")) {
+        Token bracket = tokens[pos - 1];
+        auto index = std::make_unique<Expr>();
+        index->kind = Expr::Index;
+        index->token = bracket;
+        index->children.push_back(std::move(result));
+        index->children.push_back(expression());
+        expect("]");
+        result = std::move(index);
+      } else if (accept(".")) {
+        auto field = std::make_unique<Expr>();
+        field->kind = Expr::Field;
+        field->token = identifier();
+        field->children.push_back(std::move(result));
+        result = std::move(field);
+      } else {
+        break;
+      }
     }
     return result;
   }
@@ -371,9 +397,24 @@ class Parser {
 
 public:
   explicit Parser(const std::string &source) : tokens(lex(source)) {}
-  std::vector<Function> parse() {
-    std::vector<Function> functions;
+  Program parse() {
+    Program program;
     while (!peek().text.empty()) {
+      if (accept("struct")) {
+        StructDecl decl;
+        decl.name = identifier();
+        expect("{");
+        if (!accept("}")) {
+          do {
+            decl.fields.push_back(identifier());
+            expect(":");
+            decl.fieldTypes.push_back(parseType());
+          } while (accept(","));
+          expect("}");
+        }
+        program.structs.push_back(std::move(decl));
+        continue;
+      }
       bool isExtern = accept("extern");
       if (!isExtern)
         expect("fn");
@@ -415,9 +456,9 @@ public:
         if (!returned)
           fail(function.name, "function must end with a return statement");
       }
-      functions.push_back(std::move(function));
+      program.functions.push_back(std::move(function));
     }
-    return functions;
+    return program;
   }
 };
 
