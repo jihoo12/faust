@@ -512,15 +512,25 @@ class CompilerTests(unittest.TestCase):
             "fn main() -> i32 !{extern} { let a: i8 = 1; let b: u8 = 2; sink(0, a, b); return 0; }")
         self.assertEqual(result.returncode, 0, result.stderr)
         ir = self.ir.read_text()
-        self.assertIn("sext i8", ir)
-        self.assertIn("zext i8", ir)
+        self.assertIn("@sink(i32 0, i32 1, i32 2)", ir)
 
     def test_variadic_f32_promotes_to_f64_in_ir(self):
         result = self.compile(
             "extern sink(tag: i32, ...) -> i32;\n"
             "fn main() -> i32 !{extern} { let x: f32 = 1; sink(0, x); return 0; }")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("fpext float", self.ir.read_text())
+        self.assertIn("@sink(i32 0, double 1.000000e+00)", self.ir.read_text())
+
+    def test_variadic_nonconstant_promotions_in_ir(self):
+        result = self.compile(
+            "extern sink(tag: i32, ...) -> i32;\n"
+            "fn forward(a: i8, b: u8, x: f32) -> i32 !{extern} { return sink(0, a, b, x); }\n"
+            "fn main() -> i32 { return 0; }")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        ir = self.ir.read_text()
+        self.assertIn("sext i8", ir)
+        self.assertIn("zext i8", ir)
+        self.assertIn("fpext float", ir)
 
     def test_string_literal_rejected_for_wrong_pointer_element_type(self):
         self.reject("extern takes_i32_ptr(p: *i32) -> i32 !{extern, asm, syscalls 1};\n"
