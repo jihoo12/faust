@@ -22,11 +22,15 @@ struct Expr {
   int32_t value = 0;
   std::vector<std::unique_ptr<Expr>> children;
 };
+
 struct Statement {
-  enum Kind { Let, Evaluate, Return } kind;
+  enum Kind { Let, Evaluate, Return, If } kind;
   Token token;
   std::unique_ptr<Expr> expression;
+  std::vector<Statement> thenBranch;
+  std::vector<Statement> elseBranch;
 };
+
 struct Function {
   Token name;
   std::vector<Parameter> parameters;
