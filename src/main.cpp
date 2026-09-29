@@ -61,6 +61,7 @@ faust::Program loadProgram(const std::filesystem::path &path,
 int main(int argc, char **argv) {
   std::string input, output;
   bool checkOnly = false;
+  bool objectOnly = false;
   for (int i = 1; i < argc; ++i) {
     std::string argument = argv[i];
     if (argument == "--help") {
@@ -69,6 +70,8 @@ int main(int argc, char **argv) {
     }
     if (argument == "--check")
       checkOnly = true;
+    else if (argument == "-c")
+      objectOnly = true;
     else if (argument == "-o" && i + 1 < argc)
       output = argv[++i];
     else if (!argument.empty() && argument[0] != '-' && input.empty())
@@ -78,7 +81,7 @@ int main(int argc, char **argv) {
       return 1;
     }
   }
-  if (input.empty() || (checkOnly && !output.empty())) {
+  if (input.empty() || (checkOnly && (!output.empty() || objectOnly))) {
     std::cerr << "Usage: faust [--check] <source.faust> [-o output.ll]\n";
     return 1;
   }
@@ -89,6 +92,12 @@ int main(int argc, char **argv) {
     // check() fills in type fields on the AST
     if (checkOnly)
       return 0;
+    if (objectOnly) {
+      if (output.empty())
+        throw std::runtime_error("-c requires -o <object-file>");
+      faust::generateObject(program, output);
+      return 0;
+    }
     auto ir = faust::generateIR(program);
     if (output.empty()) {
       std::cout << ir;
