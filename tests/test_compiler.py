@@ -732,7 +732,7 @@ class CompilerTests(unittest.TestCase):
     def test_include_relative_file(self):
         lib = self.root / "lib.faust"
         lib.write_text("fn answer() -> i32 { return 42; }")
-        self.execute('include "lib.faust";\nfn main() -> i32 { return answer(); }', "")
+        self.execute('include "lib.faust";\nfn main() -> i32 { answer(); return 0; }', "")
 
     def test_nested_include(self):
         sub = self.root / "sub"
