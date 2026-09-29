@@ -121,9 +121,13 @@ class Generator {
     if (value->getType() == targetType)
       return value;
     if (value->getType()->isIntegerTy() && targetType->isIntegerTy())
-      return builder.CreateIntCast(value, targetType, true);
-    if (value->getType()->isIntegerTy() && targetType->isFloatingPointTy())
+      return builder.CreateIntCast(value, targetType,
+                                   !isUnsignedIntegerType(expr.type));
+    if (value->getType()->isIntegerTy() && targetType->isFloatingPointTy()) {
+      if (isUnsignedIntegerType(expr.type))
+        return builder.CreateUIToFP(value, targetType);
       return builder.CreateSIToFP(value, targetType);
+    }
     return value;
   }
 
