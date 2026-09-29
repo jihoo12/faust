@@ -319,6 +319,25 @@ class CompilerTests(unittest.TestCase):
         self.reject("fn main() -> i32 { let xs = []; return 0; }",
                     "cannot infer type of empty array")
 
+    def test_array_decays_to_pointer_argument(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn first(p: *i32) -> i32 { return *p; }\n"
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "let xs = [10, 20, 30]; print(first(xs)); return 0; }",
+                     "10\n")
+
+    def test_array_decay_pointer_can_mutate_array(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn set_first(p: *i32) -> i32 { *p = 42; return 0; }\n"
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "let xs = [1, 2, 3]; set_first(xs); print(xs[0]); return 0; }",
+                     "42\n")
+
+    def test_array_decay_rejects_wrong_element_type(self):
+        self.reject("fn first(p: *i8) -> i8 { return *p; }\n"
+                    "fn main() -> i32 { let xs = [1, 2]; first(xs); return 0; }",
+                    "wrong type for argument 1")
+
     def test_extern_declaration(self):
         self.execute("extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};\n"
                      "fn main() -> i32 !{asm, syscalls 1} {\n"
