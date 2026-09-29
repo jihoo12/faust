@@ -58,13 +58,27 @@ class Generator {
     return value;
   }
 
+  llvm::Value *emitArrayAddress(const Expr &expr) {
+    if (expr.kind == Expr::Variable)
+      return locals.at(expr.token.text);
+    if (expr.kind == Expr::String)
+      return builder.CreateGlobalString(decodeStringLiteral(expr.token));
+    throw std::runtime_error("internal error: array expression is not addressable");
+  }
+
+  llvm::Value *emitArrayDecay(const Expr &expr) {
+    auto *address = emitArrayAddress(expr);
+    if (expr.kind == Expr::String)
+      return address;
+    return builder.CreateInBoundsGEP(
+        llvmType(expr.type), address,
+        {builder.getInt64(0), builder.getInt64(0)});
+  }
+
   llvm::Value *emitIndexAddress(const Expr &expr) {
     const Expr &base = *expr.children[0];
     llvm::Value *arrayAddress = nullptr;
-    if (base.kind == Expr::Variable)
-      arrayAddress = locals.at(base.token.text);
-    else
-      throw std::runtime_error("internal error: array base is not addressable");
+    arrayAddress = emitArrayAddress(base);
     auto *index = emitExpr(*expr.children[1]);
     if (!index->getType()->isIntegerTy(64))
       index = builder.CreateIntCast(index, builder.getInt64Ty(), true);
@@ -84,7 +98,7 @@ class Generator {
     case Expr::Boolean:
       return builder.getInt1(expr.value != 0);
     case Expr::String:
-      return builder.CreateGlobalString(decodeStringLiteral(expr.token));
+      return builder.CreateLoad(llvmType(expr.type), emitArrayAddress(expr));
     case Expr::Variable: {
       auto *slot = locals.at(expr.token.text);
       return builder.CreateLoad(slot->getAllocatedType(), slot, expr.token.text);
@@ -164,9 +178,16 @@ class Generator {
     }
     case Expr::Call: {
       std::vector<llvm::Value *> arguments;
-      for (const auto &child : expr.children)
-        arguments.push_back(emitExpr(*child));
-      return builder.CreateCall(functions.at(expr.token.text), arguments);
+      auto *callee = functions.at(expr.token.text);
+      for (size_t i = 0; i < expr.children.size(); ++i) {
+        const auto &child = *expr.children[i];
+        if (i < callee->arg_size() && child.type.kind == Type::Array &&
+            callee->getFunctionType()->getParamType(i)->isPointerTy())
+          arguments.push_back(emitArrayDecay(child));
+        else
+          arguments.push_back(emitExpr(child));
+      }
+      return builder.CreateCall(callee, arguments);
     }
     }
     throw std::runtime_error("internal error: unknown expression");
