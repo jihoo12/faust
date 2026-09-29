@@ -274,7 +274,7 @@ class CompilerTests(unittest.TestCase):
 
     def test_string_literal_escape_decoding(self):
         self.execute("extern printf(fmt: *i8, ...) -> i32 !{asm, syscalls 1};\n"
-                     "fn main() -> i32 !{asm, syscalls 1} { printf(\"a\\\\tb\\\\n\"); return 0; }",
+                     "fn main() -> i32 !{asm, syscalls 1} { printf(\"a\\tb\\n\"); return 0; }",
                      "a\tb\n")
 
     def test_string_literal_rejected_for_wrong_pointer_element_type(self):
