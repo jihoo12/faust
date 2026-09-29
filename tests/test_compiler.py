@@ -380,6 +380,18 @@ class CompilerTests(unittest.TestCase):
                      "fn main() -> i32 !{asm, syscalls 1} {\n"
                      "return write(1, 0, 0); }", "")
 
+    def test_extern_i64_return_type_in_ir(self):
+        result = self.compile("extern wide() -> i64;\n"
+                              "fn main() -> i32 { wide(); return 0; }")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("declare i64 @wide()", self.ir.read_text())
+
+    def test_extern_pointer_return_type_in_ir(self):
+        result = self.compile("extern data() -> *i8;\n"
+                              "fn main() -> i32 { data(); return 0; }")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("declare ptr @data()", self.ir.read_text())
+
     def test_string_literal_is_pointer_typed(self):
         self.execute("extern puts(s: *i8) -> i32 !{asm, syscalls 1};\n"
                      "fn main() -> i32 !{asm, syscalls 1} { puts(\"hello\"); return 0; }",
