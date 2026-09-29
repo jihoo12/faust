@@ -496,6 +496,27 @@ class CompilerTests(unittest.TestCase):
                     "fn main() -> i32 { return takes_int(\"hello\"); }",
                     "wrong type for argument 1")
 
+    def test_extern_call_requires_extern_contract(self):
+        self.reject("extern puts(s: *i8) -> i32;\n"
+                    "fn main() -> i32 { puts(\"hello\"); return 0; }",
+                    "requires extern effect")
+
+    def test_extern_call_with_extern_contract(self):
+        self.execute("extern puts(s: *i8) -> i32;\n"
+                     "fn main() -> i32 !{extern} { puts(\"hello\"); return 0; }",
+                     "hello\n")
+
+    def test_extern_effect_is_transitive(self):
+        self.reject("extern puts(s: *i8) -> i32;\n"
+                    "fn helper() -> i32 !{extern} { return puts(\"hello\"); }\n"
+                    "fn main() -> i32 { helper(); return 0; }",
+                    "requires extern effect")
+
+    def test_extern_and_syscall_contract(self):
+        self.execute("extern puts(s: *i8) -> i32;\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} { puts(\"hello\"); return 0; }",
+                     "hello\n")
+
     def test_extern_requires_syscall_contract(self):
         self.reject("extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};\n"
                     "fn main() -> i32 { return write(1, 0, 0); }",
