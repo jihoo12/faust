@@ -8,7 +8,8 @@ and emits verified LLVM 22 IR for interpreted or native execution.
 
 Faust explores whether explicit effect contracts can make systems code safer.
 Every function declares an upper bound on its system effects — which syscalls
-it may invoke and whether it may contain inline assembly. The compiler enforces
+it may invoke, whether it may contain inline assembly, and whether it may cross
+an external C ABI boundary. The compiler enforces
 these contracts at every call site, transitively, so a wrapper cannot hide the
 effects of the functions it calls. The goal is not a sandbox or a proof system,
 but a lightweight, composable way to reason about what a function can do.
@@ -32,16 +33,22 @@ including functions that are never called, so a wrapper cannot hide effects.
 | --- | --- |
 | `asm` | May contain inline assembly |
 | `syscalls N` | May invoke syscall number N (x86-64) |
+| `extern` | May call an external/C function |
 
 Declaring `syscalls` requires `asm` — syscalls are implemented via inline
 assembly. The compiler enforces this: a function with `syscalls` but no `asm`
 is rejected.
 
-`extern` declares a C function with a syscall contract:
+`extern` declares a C function. Calling any external function requires the
+caller to include the `extern` effect; any other effects on the declaration
+also propagate transitively:
 
 ```text
 extern write(fd: i32, buf: *i8, len: i32) -> i32 !{asm, syscalls 1};
-extern read(fd: i32, buf: *i8, len: i32) -> i32 !{asm, syscalls 0};
+
+fn report(buf: *i8, len: i32) -> i32 !{extern, asm, syscalls 1} {
+  return write(1, buf, len);
+}
 ```
 
 `asm` blocks embed inline assembly with optional output/input constraints:
@@ -62,6 +69,35 @@ These contracts check calls in Faust source. They are not an operating-system
 sandbox, memory budgets, a capability token system, a termination proof, or
 memory safety guarantees. Stack use, runtime startup, and execution time are
 not tracked. In particular, a function without `asm` can still recurse forever.
+
+## Structs
+
+Structs are nominal aggregate types with named fields:
+
+```text
+struct Point {
+  x: i32,
+  y: i32
+}
+
+fn sum(p: Point) -> i32 {
+  return p.x + p.y;
+}
+```
+
+Constructors name every field, and construction order does not have to match
+declaration order. Fields are lvalues, so they can be assigned or addressed:
+
+```text
+let p = Point { y: 22, x: 20 };
+p.x = 21;
+let px: *i32 = &p.x;
+```
+
+Immutable scalar and struct values are kept as LLVM SSA values when no address
+is required. Mutable values, address-taken values, and arrays use stack storage.
+The compiler does not synthesize heap allocation; heap allocation must be an
+explicit external call or direct syscall chosen by the program.
 
 ## Language documentation
 
@@ -132,8 +168,8 @@ nix flake check
 
 `nix build` runs the compiler tests and installs `result/bin/faust`. Tests cover
 syscall contract violations, transitive calls, asm blocks, diagnostics,
-arithmetic, evaluation order, control flow, LLVM execution, and native
-compilation. `flake.lock` pins Nixpkgs; update it with `nix flake update`.
+arithmetic, pointers, arrays, structs, evaluation order, control flow, LLVM
+execution, variadic ABI lowering, and native compilation. `flake.lock` pins Nixpkgs; update it with `nix flake update`.
 
 ## References
 
