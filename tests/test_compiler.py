@@ -14,7 +14,7 @@ def run(*args):
     return subprocess.run(args, text=True, capture_output=True, timeout=15)
 
 
-PRINT_WRAPPER = 'extern printf(fmt: *i8, ...) -> i32 !{asm, syscalls 1};\nfn print(x: i32) -> i32 !{asm, syscalls 1} {\n  return printf("%d\\n", x);\n}\n'
+PRINT_WRAPPER = 'extern printf(fmt: *i8, ...) -> i32 !{extern, asm, syscalls 1};\nfn print(x: i32) -> i32 !{extern, asm, syscalls 1} {\n  return printf("%d\\n", x);\n}\n'
 
 
 class CompilerTests(unittest.TestCase):
@@ -67,20 +67,20 @@ class CompilerTests(unittest.TestCase):
                             f"requires syscall {syscall}")
 
     def test_transitive_syscall_cannot_be_hidden(self):
-        self.reject("fn leaf() -> i32 !{asm, syscalls 1} { return 0; }\n"
+        self.reject("fn leaf() -> i32 !{extern, asm, syscalls 1} { return 0; }\n"
                     "fn middle() -> i32 { return leaf(); }\n"
-                    "fn main() -> i32 !{asm, syscalls 1} { return middle(); }",
+                    "fn main() -> i32 !{extern, asm, syscalls 1} { return middle(); }",
                     "requires syscall 1 in contract of 'middle'")
 
     def test_forward_calls_and_contract_superset(self):
         self.execute(PRINT_WRAPPER +
-                     "fn main() -> i32 !{asm, syscalls 1} { print(first()); return 0; }\n"
-                     "fn first() -> i32 !{asm, syscalls 1} { return second(); }\n"
-                     "fn second() -> i32 !{asm, syscalls 1} { return 42; }", "42\n")
+                     "fn main() -> i32 !{extern, asm, syscalls 1} { print(first()); return 0; }\n"
+                     "fn first() -> i32 !{extern, asm, syscalls 1} { return second(); }\n"
+                     "fn second() -> i32 !{extern, asm, syscalls 1} { return 42; }", "42\n")
 
     def test_arithmetic_and_wrapping(self):
         self.execute(PRINT_WRAPPER +
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let a = 2 + 3 * 4; print(a); print((2 + 3) * 4);\n"
                      "print(10 - 3 - 2); print(-a); print(-2147483648);\n"
                      "print(2147483647 + 1); return 0; }",
@@ -89,13 +89,13 @@ class CompilerTests(unittest.TestCase):
     def test_left_to_right_arguments(self):
         self.execute(PRINT_WRAPPER +
                      "fn pair(a: i32, b: i32) -> i32 { return a + b; }\n"
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "pair(print(1), print(2)); return 0; }", "1\n2\n")
 
     def test_runtime_symbol_isolation(self):
         self.execute(PRINT_WRAPPER +
                      "fn my_printf() -> i32 { return 42; }\n"
-                     "fn main() -> i32 !{asm, syscalls 1} { print(my_printf()); return 0; }",
+                     "fn main() -> i32 !{extern, asm, syscalls 1} { print(my_printf()); return 0; }",
                      "42\n")
 
     def test_empty_contract_and_comments(self):
@@ -148,14 +148,14 @@ class CompilerTests(unittest.TestCase):
 
     def test_boolean_literals(self):
         self.execute(PRINT_WRAPPER +
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "if true { print(1); } else { print(0); }\n"
                      "if false { print(2); } else { print(3); }\n"
                      "return 0; }", "1\n3\n")
 
     def test_comparison_operators(self):
         self.execute(PRINT_WRAPPER +
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "if 1 < 2 { print(1); } else { print(0); }\n"
                      "if 2 > 3 { print(2); } else { print(0); }\n"
                      "if 3 <= 3 { print(1); } else { print(0); }\n"
@@ -166,7 +166,7 @@ class CompilerTests(unittest.TestCase):
 
     def test_logical_operators(self):
         self.execute(PRINT_WRAPPER +
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "if true && true { print(1); } else { print(0); }\n"
                      "if true && false { print(2); } else { print(0); }\n"
                      "if false || true { print(1); } else { print(0); }\n"
@@ -177,16 +177,16 @@ class CompilerTests(unittest.TestCase):
 
     def test_short_circuit_evaluation(self):
         self.execute(PRINT_WRAPPER +
-                     "fn side_effect() -> i32 !{asm, syscalls 1} {\n"
+                     "fn side_effect() -> i32 !{extern, asm, syscalls 1} {\n"
                      "print(99); return 0; }\n"
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "if false && side_effect() == 1 { print(1); }\n"
                      "if true || side_effect() == 1 { print(2); }\n"
                      "return 0; }", "2\n")
 
     def test_if_else_if_chain(self):
         self.execute(PRINT_WRAPPER +
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let x = 2;\n"
                      "if x == 1 { print(1); }\n"
                      "else if x == 2 { print(2); }\n"
@@ -195,7 +195,7 @@ class CompilerTests(unittest.TestCase):
 
     def test_while_loop(self):
         self.execute(PRINT_WRAPPER +
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let i = 3;\n"
                      "while i > 0 {\n"
                      "print(i);\n"
@@ -205,7 +205,7 @@ class CompilerTests(unittest.TestCase):
 
     def test_nested_control_flow(self):
         self.execute(PRINT_WRAPPER +
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let i = 2;\n"
                      "while i > 0 {\n"
                      "if i == 2 { print(10); } else { print(20); }\n"
@@ -217,7 +217,7 @@ class CompilerTests(unittest.TestCase):
         self.execute(PRINT_WRAPPER +
                      "fn is_positive(x: i32) -> bool {\n"
                      "return x > 0; }\n"
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "if is_positive(5) { print(1); } else { print(0); }\n"
                      "if is_positive(-3) { print(2); } else { print(0); }\n"
                      "return 0; }", "1\n0\n")
@@ -258,26 +258,26 @@ class CompilerTests(unittest.TestCase):
     def test_bool_return_type(self):
         self.execute(PRINT_WRAPPER +
                      "fn f() -> bool { return true; }\n"
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "if f() { print(1); } else { print(0); }\n"
                      "return 0; }", "1\n")
 
     def test_address_of_and_dereference(self):
         self.execute(PRINT_WRAPPER +
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let x = 42; let p: *i32 = &x; print(*p); return 0; }",
                      "42\n")
 
     def test_store_through_pointer(self):
         self.execute(PRINT_WRAPPER +
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let x = 1; let p: *i32 = &x; *p = 42; print(x); return 0; }",
                      "42\n")
 
     def test_pointer_parameter_dereference(self):
         self.execute(PRINT_WRAPPER +
                      "fn read(p: *i32) -> i32 { return *p; }\n"
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let x = 7; print(read(&x)); return 0; }",
                      "7\n")
 
@@ -291,19 +291,19 @@ class CompilerTests(unittest.TestCase):
 
     def test_array_literal_and_index(self):
         self.execute(PRINT_WRAPPER +
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let xs: [4]i32 = [10, 20, 30, 40]; print(xs[2]); return 0; }",
                      "30\n")
 
     def test_array_index_assignment(self):
         self.execute(PRINT_WRAPPER +
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let xs = [1, 2, 3]; xs[1] = 42; print(xs[1]); return 0; }",
                      "42\n")
 
     def test_array_index_variable(self):
         self.execute(PRINT_WRAPPER +
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let xs = [10, 20, 30]; let i = 2; print(xs[i]); return 0; }",
                      "30\n")
 
@@ -322,14 +322,14 @@ class CompilerTests(unittest.TestCase):
     def test_array_decays_to_pointer_argument(self):
         self.execute(PRINT_WRAPPER +
                      "fn first(p: *i32) -> i32 { return *p; }\n"
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let xs = [10, 20, 30]; print(first(xs)); return 0; }",
                      "10\n")
 
     def test_array_decay_pointer_can_mutate_array(self):
         self.execute(PRINT_WRAPPER +
                      "fn set_first(p: *i32) -> i32 { *p = 42; return 0; }\n"
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let xs = [1, 2, 3]; set_first(xs); print(xs[0]); return 0; }",
                      "42\n")
 
@@ -340,13 +340,13 @@ class CompilerTests(unittest.TestCase):
 
     def test_address_of_array_element(self):
         self.execute(PRINT_WRAPPER +
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let xs = [10, 20, 30]; let p: *i32 = &xs[1]; print(*p); return 0; }",
                      "20\n")
 
     def test_address_of_dereference(self):
         self.execute(PRINT_WRAPPER +
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let x = 7; let p: *i32 = &x; let q: *i32 = &*p; *q = 9; print(x); return 0; }",
                      "9\n")
 
@@ -356,65 +356,65 @@ class CompilerTests(unittest.TestCase):
 
     def test_unary_applies_after_postfix(self):
         self.execute(PRINT_WRAPPER +
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let xs = [10, 20]; let p: *i32 = &xs[1]; print(*p); return 0; }",
                      "20\n")
 
     def test_parenthesized_array_index(self):
         self.execute(PRINT_WRAPPER +
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let xs = [10, 20, 30]; print((xs)[1]); return 0; }",
                      "20\n")
 
     def test_call_result_pointer_index(self):
         self.execute(PRINT_WRAPPER +
                      "fn identity(p: *i32) -> *i32 { return p; }\n"
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let xs = [4, 5, 6]; print(identity(xs)[2]); return 0; }",
                      "6\n")
 
     def test_chained_array_index(self):
         self.execute(PRINT_WRAPPER +
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let xs = [[1, 2], [3, 4]]; print(xs[1][0]); return 0; }",
                      "3\n")
 
     def test_pointer_index_read(self):
         self.execute(PRINT_WRAPPER +
                      "fn second(p: *i32) -> i32 { return p[1]; }\n"
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let xs = [10, 20, 30]; print(second(xs)); return 0; }",
                      "20\n")
 
     def test_pointer_index_write(self):
         self.execute(PRINT_WRAPPER +
                      "fn set_second(p: *i32) -> i32 { p[1] = 42; return 0; }\n"
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let xs = [1, 2, 3]; set_second(xs); print(xs[1]); return 0; }",
                      "42\n")
 
     def test_address_of_pointer_index(self):
         self.execute(PRINT_WRAPPER +
                      "fn get_second(p: *i32) -> *i32 { return &p[1]; }\n"
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let xs = [4, 5, 6]; let p: *i32 = get_second(xs); print(*p); return 0; }",
                      "5\n")
 
     def test_array_literal_decays_to_pointer_argument(self):
         self.execute(PRINT_WRAPPER +
                      "fn first(p: *i32) -> i32 { return p[0]; }\n"
-                     "fn main() -> i32 !{asm, syscalls 1} { print(first([41, 42])); return 0; }",
+                     "fn main() -> i32 !{extern, asm, syscalls 1} { print(first([41, 42])); return 0; }",
                      "41\n")
 
     def test_array_decay_in_typed_let(self):
         self.execute(PRINT_WRAPPER +
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let xs = [11, 22]; let p: *i32 = xs; print(p[1]); return 0; }",
                      "22\n")
 
     def test_array_decay_in_assignment(self):
         self.execute(PRINT_WRAPPER +
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let xs = [7, 8]; let p: *i32 = 0; p = xs; print(*p); return 0; }",
                      "7\n")
 
@@ -422,7 +422,7 @@ class CompilerTests(unittest.TestCase):
         self.execute(PRINT_WRAPPER +
                      "fn data(p: *i32) -> *i32 { return p; }\n"
                      "fn first(xs: *i32) -> i32 { return *xs; }\n"
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let xs = [31, 32]; print(first(xs)); return 0; }",
                      "31\n")
 
@@ -439,8 +439,8 @@ class CompilerTests(unittest.TestCase):
                     "outside the range of i8")
 
     def test_extern_declaration(self):
-        self.execute("extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};\n"
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+        self.execute("extern write(fd: i32, buf: i32, len: i32) -> i32 !{extern, asm, syscalls 1};\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "return write(1, 0, 0); }", "")
 
     def test_extern_i64_return_type_in_ir(self):
@@ -456,18 +456,18 @@ class CompilerTests(unittest.TestCase):
         self.assertIn("declare ptr @data()", self.ir.read_text())
 
     def test_string_literal_is_pointer_typed(self):
-        self.execute("extern puts(s: *i8) -> i32 !{asm, syscalls 1};\n"
-                     "fn main() -> i32 !{asm, syscalls 1} { puts(\"hello\"); return 0; }",
+        self.execute("extern puts(s: *i8) -> i32 !{extern, asm, syscalls 1};\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} { puts(\"hello\"); return 0; }",
                      "hello\n")
 
     def test_string_literal_escape_decoding(self):
-        self.execute("extern printf(fmt: *i8, ...) -> i32 !{asm, syscalls 1};\n"
-                     "fn main() -> i32 !{asm, syscalls 1} { printf(\"a\\tb\\n\"); return 0; }",
+        self.execute("extern printf(fmt: *i8, ...) -> i32 !{extern, asm, syscalls 1};\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} { printf(\"a\\tb\\n\"); return 0; }",
                      "a\tb\n")
 
     def test_variadic_string_literal_decays_to_pointer(self):
-        self.execute("extern printf(fmt: *i8, ...) -> i32 !{asm, syscalls 1};\n"
-                     "fn main() -> i32 !{asm, syscalls 1} { printf(\"%s\\n\", \"hello\"); return 0; }",
+        self.execute("extern printf(fmt: *i8, ...) -> i32 !{extern, asm, syscalls 1};\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} { printf(\"%s\\n\", \"hello\"); return 0; }",
                      "hello\n")
 
     def test_variadic_small_integer_promotions_in_ir(self):
@@ -487,8 +487,8 @@ class CompilerTests(unittest.TestCase):
         self.assertIn("fpext float", self.ir.read_text())
 
     def test_string_literal_rejected_for_wrong_pointer_element_type(self):
-        self.reject("extern takes_i32_ptr(p: *i32) -> i32 !{asm, syscalls 1};\n"
-                    "fn main() -> i32 !{asm, syscalls 1} { return takes_i32_ptr(\"hello\"); }",
+        self.reject("extern takes_i32_ptr(p: *i32) -> i32 !{extern, asm, syscalls 1};\n"
+                    "fn main() -> i32 !{extern, asm, syscalls 1} { return takes_i32_ptr(\"hello\"); }",
                     "wrong type for argument 1")
 
     def test_string_literal_rejected_for_integer_param(self):
@@ -518,20 +518,20 @@ class CompilerTests(unittest.TestCase):
                      "hello\n")
 
     def test_extern_requires_syscall_contract(self):
-        self.reject("extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};\n"
+        self.reject("extern write(fd: i32, buf: i32, len: i32) -> i32 !{extern, asm, syscalls 1};\n"
                     "fn main() -> i32 { return write(1, 0, 0); }",
                     "requires syscall 1")
 
     def test_extern_transitive_syscall(self):
-        self.reject("extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};\n"
-                    "fn helper() -> i32 !{asm, syscalls 1} { return write(1, 0, 0); }\n"
+        self.reject("extern write(fd: i32, buf: i32, len: i32) -> i32 !{extern, asm, syscalls 1};\n"
+                    "fn helper() -> i32 !{extern, asm, syscalls 1} { return write(1, 0, 0); }\n"
                     "fn main() -> i32 { return helper(); }",
                     "requires syscall 1")
 
     def test_extern_multiple_syscalls(self):
-        self.execute("extern read(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 0};\n"
-                     "extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};\n"
-                     "fn main() -> i32 !{asm, syscalls 0,1} {\n"
+        self.execute("extern read(fd: i32, buf: i32, len: i32) -> i32 !{extern, asm, syscalls 0};\n"
+                     "extern write(fd: i32, buf: i32, len: i32) -> i32 !{extern, asm, syscalls 1};\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 0,1} {\n"
                      "read(0, 0, 0); write(1, 0, 0); return 0; }", "")
 
     def test_asm_block(self):
@@ -549,7 +549,7 @@ class CompilerTests(unittest.TestCase):
                     "requires asm")
 
     def test_combined_syscall_and_asm(self):
-        self.execute("fn main() -> i32 !{asm, syscalls 1} {\n"
+        self.execute("fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "asm { \"nop\" }\n"
                      "return 0; }", "")
 
@@ -558,45 +558,45 @@ class CompilerTests(unittest.TestCase):
                      "fn main() -> i32 { let x = add(20, 22); return 0; }", "")
 
     def test_syscall_not_in_contract_rejected(self):
-        self.reject("fn helper() -> i32 !{asm, syscalls 1} { return 0; }\n"
+        self.reject("fn helper() -> i32 !{extern, asm, syscalls 1} { return 0; }\n"
                      "fn main() -> i32 !{asm} { return helper(); }",
                      "requires syscall 1")
 
     def test_syscall_transitive_through_multiple_levels(self):
-        self.reject("fn a() -> i32 !{asm, syscalls 1} { return 0; }\n"
+        self.reject("fn a() -> i32 !{extern, asm, syscalls 1} { return 0; }\n"
                      "fn b() -> i32 { return a(); }\n"
                      "fn c() -> i32 { return b(); }\n"
-                     "fn main() -> i32 !{asm, syscalls 1} { return c(); }",
+                     "fn main() -> i32 !{extern, asm, syscalls 1} { return c(); }",
                      "requires syscall 1 in contract of 'b'")
 
     def test_syscall_partial_contract_rejected(self):
-        self.reject("extern read(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 0};\n"
-                     "extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};\n"
-                     "fn main() -> i32 !{asm, syscalls 0} {\n"
+        self.reject("extern read(fd: i32, buf: i32, len: i32) -> i32 !{extern, asm, syscalls 0};\n"
+                     "extern write(fd: i32, buf: i32, len: i32) -> i32 !{extern, asm, syscalls 1};\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 0} {\n"
                      "read(0, 0, 0); write(1, 0, 0); return 0; }",
                      "requires syscall 1")
 
     def test_syscall_in_contract_but_not_used(self):
-        self.execute("extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};\n"
-                      "fn main() -> i32 !{asm, syscalls 0,1} { return 0; }", "")
+        self.execute("extern write(fd: i32, buf: i32, len: i32) -> i32 !{extern, asm, syscalls 1};\n"
+                      "fn main() -> i32 !{extern, asm, syscalls 0,1} { return 0; }", "")
 
     def test_syscall_through_if_branch(self):
-        self.reject("fn helper() -> i32 !{asm, syscalls 1} { return 0; }\n"
+        self.reject("fn helper() -> i32 !{extern, asm, syscalls 1} { return 0; }\n"
                      "fn main() -> i32 !{asm} {\n"
                      "if true { helper(); }\n"
                      "return 0; }",
                      "requires syscall 1")
 
     def test_syscall_through_while_loop(self):
-        self.reject("fn helper() -> i32 !{asm, syscalls 1} { return 0; }\n"
+        self.reject("fn helper() -> i32 !{extern, asm, syscalls 1} { return 0; }\n"
                      "fn main() -> i32 !{asm} {\n"
                      "while false { helper(); }\n"
                      "return 0; }",
                      "requires syscall 1")
 
     def test_syscall_zero_required(self):
-        self.reject("extern read(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 0};\n"
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+        self.reject("extern read(fd: i32, buf: i32, len: i32) -> i32 !{extern, asm, syscalls 0};\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "return read(0, 0, 0); }",
                      "requires syscall 0")
 
@@ -609,21 +609,21 @@ class CompilerTests(unittest.TestCase):
                      "requires asm effect")
 
     def test_syscall_call_no_contract_rejected(self):
-        self.reject("fn helper() -> i32 !{asm, syscalls 1} { return 0; }\n"
+        self.reject("fn helper() -> i32 !{extern, asm, syscalls 1} { return 0; }\n"
                      "fn main() -> i32 { return helper(); }",
                      "requires syscall 1")
 
     def test_asm_and_syscall_no_contract_rejected(self):
-        self.reject("fn helper() -> i32 !{asm, syscalls 1} { return 0; }\n"
+        self.reject("fn helper() -> i32 !{extern, asm, syscalls 1} { return 0; }\n"
                      "fn main() -> i32 { asm { \"nop\" } return helper(); }",
                      "requires asm effect")
 
     def test_syscall_multiple_all_required(self):
-        self.reject("extern read(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 0};\n"
-                     "extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};\n"
-                     "fn helper() -> i32 !{asm, syscalls 0,1} {\n"
+        self.reject("extern read(fd: i32, buf: i32, len: i32) -> i32 !{extern, asm, syscalls 0};\n"
+                     "extern write(fd: i32, buf: i32, len: i32) -> i32 !{extern, asm, syscalls 1};\n"
+                     "fn helper() -> i32 !{extern, asm, syscalls 0,1} {\n"
                      "read(0, 0, 0); write(1, 0, 0); return 0; }\n"
-                     "fn main() -> i32 !{asm, syscalls 0} { return helper(); }",
+                     "fn main() -> i32 !{extern, asm, syscalls 0} { return helper(); }",
                      "requires syscall 1")
 
     def test_cli_errors(self):
@@ -655,14 +655,14 @@ class CompilerTests(unittest.TestCase):
 
     def test_unsigned_comparison(self):
         self.execute(PRINT_WRAPPER +
-                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
                      "let a: u8 = 255; let b: u8 = 1; if a > b { print(1); } else { print(0); } return 0; }",
                      "1\n")
 
     def test_unsigned_extension_to_i32(self):
         self.execute(PRINT_WRAPPER +
                      "fn widen(x: u8) -> i32 { return x; }\n"
-                     "fn main() -> i32 !{asm, syscalls 1} { print(widen(255)); return 0; }",
+                     "fn main() -> i32 !{extern, asm, syscalls 1} { print(widen(255)); return 0; }",
                      "255\n")
 
     def test_unsigned_to_float_codegen(self):
