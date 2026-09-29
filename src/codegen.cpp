@@ -47,6 +47,17 @@ class Generator {
     return builder.getInt32Ty();
   }
 
+  llvm::Value *convertValue(llvm::Value *value, Type target) {
+    auto *targetType = llvmType(target);
+    if (value->getType() == targetType)
+      return value;
+    if (value->getType()->isIntegerTy() && targetType->isIntegerTy())
+      return builder.CreateIntCast(value, targetType, true);
+    if (value->getType()->isIntegerTy() && targetType->isFloatingPointTy())
+      return builder.CreateSIToFP(value, targetType);
+    return value;
+  }
+
   llvm::Value *emitExpr(const Expr &expr) {
     switch (expr.kind) {
     case Expr::Integer: {
@@ -141,7 +152,7 @@ class Generator {
       auto *value = emitExpr(*statement.expression);
       auto *slot = builder.CreateAlloca(llvmType(statement.type), nullptr,
                                         statement.token.text);
-      builder.CreateStore(value, slot);
+      builder.CreateStore(convertValue(value, statement.type), slot);
       locals[statement.token.text] = slot;
       break;
     }
@@ -163,12 +174,16 @@ class Generator {
       }
       break;
     case Statement::Assign:
-      builder.CreateStore(emitExpr(*statement.expression),
-                          locals.at(statement.token.text));
+      auto *slot = locals.at(statement.token.text);
+      builder.CreateStore(convertValue(emitExpr(*statement.expression),
+                                       statement.type),
+                          slot);
       break;
     case Statement::Store:
-      builder.CreateStore(emitExpr(*statement.expression),
-                          emitExpr(*statement.condition));
+      builder.CreateStore(
+          convertValue(emitExpr(*statement.expression),
+                       *statement.condition->type.element),
+          emitExpr(*statement.condition));
       break;
     case Statement::If: {
       auto *cond = emitExpr(*statement.condition);
