@@ -58,6 +58,21 @@ class Generator {
     return value;
   }
 
+  llvm::Value *emitIndexAddress(const Expr &expr) {
+    const Expr &base = *expr.children[0];
+    llvm::Value *arrayAddress = nullptr;
+    if (base.kind == Expr::Variable)
+      arrayAddress = locals.at(base.token.text);
+    else
+      throw std::runtime_error("internal error: array base is not addressable");
+    auto *index = emitExpr(*expr.children[1]);
+    if (!index->getType()->isIntegerTy(64))
+      index = builder.CreateIntCast(index, builder.getInt64Ty(), true);
+    return builder.CreateInBoundsGEP(
+        llvmType(base.type), arrayAddress,
+        {builder.getInt64(0), index});
+  }
+
   llvm::Value *emitExpr(const Expr &expr) {
     switch (expr.kind) {
     case Expr::Integer: {
@@ -74,6 +89,17 @@ class Generator {
       auto *slot = locals.at(expr.token.text);
       return builder.CreateLoad(slot->getAllocatedType(), slot, expr.token.text);
     }
+    case Expr::ArrayLiteral: {
+      auto *arrayType = llvmType(expr.type);
+      llvm::Value *value = llvm::UndefValue::get(arrayType);
+      for (size_t i = 0; i < expr.children.size(); ++i)
+        value = builder.CreateInsertValue(
+            value, convertValue(emitExpr(*expr.children[i]), *expr.type.element),
+            {static_cast<unsigned>(i)});
+      return value;
+    }
+    case Expr::Index:
+      return builder.CreateLoad(llvmType(expr.type), emitIndexAddress(expr));
     case Expr::AddressOf:
       return locals.at(expr.children[0]->token.text);
     case Expr::Dereference: {
@@ -185,6 +211,11 @@ class Generator {
           convertValue(emitExpr(*statement.expression),
                        *statement.condition->type.element),
           emitExpr(*statement.condition));
+      break;
+    case Statement::IndexStore:
+      builder.CreateStore(
+          convertValue(emitExpr(*statement.expression), statement.condition->type),
+          emitIndexAddress(*statement.condition));
       break;
     case Statement::If: {
       auto *cond = emitExpr(*statement.condition);
