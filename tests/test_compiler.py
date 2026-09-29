@@ -189,7 +189,7 @@ class CompilerTests(unittest.TestCase):
         cases = [
             ("", "program must define main"),
             ("fn main(a: i32) -> i32 { return a; }", "main must have no parameters"),
-            ("fn main() -> i32 {}", "must end with a return"),
+            ("fn main() -> i32 {}", "must return on all paths"),
             ("fn main() -> i32 { return 0; let x = 1; }", "statement after return"),
             ("fn main() -> i32 { return x; }", "unknown variable 'x'"),
             ("fn main() -> i32 { let x = x; return x; }", "unknown variable 'x'"),
