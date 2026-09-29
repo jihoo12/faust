@@ -115,41 +115,6 @@ class Parser {
       expect(")");
       return result;
     }
-    if (accept("-")) {
-      if (accept("2147483648")) {
-        auto result = std::make_unique<Expr>();
-        result->kind = Expr::Integer;
-        result->token = token;
-        result->value = INT32_MIN;
-        return result;
-      }
-      auto result = std::make_unique<Expr>();
-      result->kind = Expr::Negate;
-      result->token = token;
-      result->children.push_back(primary());
-      return result;
-    }
-    if (accept("!")) {
-      auto result = std::make_unique<Expr>();
-      result->kind = Expr::Not;
-      result->token = token;
-      result->children.push_back(primary());
-      return result;
-    }
-    if (accept("&")) {
-      auto result = std::make_unique<Expr>();
-      result->kind = Expr::AddressOf;
-      result->token = token;
-      result->children.push_back(primary());
-      return result;
-    }
-    if (accept("*")) {
-      auto result = std::make_unique<Expr>();
-      result->kind = Expr::Dereference;
-      result->token = token;
-      result->children.push_back(primary());
-      return result;
-    }
     if (accept("[")) {
       auto result = std::make_unique<Expr>();
       result->kind = Expr::ArrayLiteral;
@@ -209,6 +174,11 @@ class Parser {
         expect(")");
       }
     }
+    return result;
+  }
+
+  std::unique_ptr<Expr> postfix() {
+    auto result = primary();
     while (accept("[")) {
       Token bracket = tokens[pos - 1];
       auto index = std::make_unique<Expr>();
@@ -221,8 +191,41 @@ class Parser {
     }
     return result;
   }
+
+  std::unique_ptr<Expr> unary() {
+    Token token = peek();
+    if (accept("-")) {
+      if (accept("2147483648")) {
+        auto result = std::make_unique<Expr>();
+        result->kind = Expr::Integer;
+        result->token = token;
+        result->value = INT32_MIN;
+        return result;
+      }
+      auto result = std::make_unique<Expr>();
+      result->kind = Expr::Negate;
+      result->token = token;
+      result->children.push_back(unary());
+      return result;
+    }
+    Expr::Kind kind;
+    if (accept("!"))
+      kind = Expr::Not;
+    else if (accept("&"))
+      kind = Expr::AddressOf;
+    else if (accept("*"))
+      kind = Expr::Dereference;
+    else
+      return postfix();
+    auto result = std::make_unique<Expr>();
+    result->kind = kind;
+    result->token = token;
+    result->children.push_back(unary());
+    return result;
+  }
+
   std::unique_ptr<Expr> expression(int minimum = 0) {
-    auto left = primary();
+    auto left = unary();
     while (true) {
       const auto op = peek();
       int precedence;

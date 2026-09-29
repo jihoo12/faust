@@ -354,6 +354,31 @@ class CompilerTests(unittest.TestCase):
         self.reject("fn main() -> i32 { (1 + 2) = 3; return 0; }",
                     "left side of assignment is not assignable")
 
+    def test_unary_applies_after_postfix(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "let xs = [10, 20]; let p: *i32 = &xs[1]; print(*p); return 0; }",
+                     "20\n")
+
+    def test_parenthesized_array_index(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "let xs = [10, 20, 30]; print((xs)[1]); return 0; }",
+                     "20\n")
+
+    def test_call_result_pointer_index(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn identity(p: *i32) -> *i32 { return p; }\n"
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "let xs = [4, 5, 6]; print(identity(xs)[2]); return 0; }",
+                     "6\n")
+
+    def test_chained_array_index(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "let xs = [[1, 2], [3, 4]]; print(xs[1][0]); return 0; }",
+                     "3\n")
+
     def test_pointer_index_read(self):
         self.execute(PRINT_WRAPPER +
                      "fn second(p: *i32) -> i32 { return p[1]; }\n"
