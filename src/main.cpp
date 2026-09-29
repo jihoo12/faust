@@ -41,6 +41,7 @@ int main(int argc, char **argv) {
       throw std::runtime_error("cannot read input file");
     auto program = faust::parse(source);
     faust::check(program);
+    // check() fills in type fields on the AST
     if (checkOnly)
       return 0;
     auto ir = faust::generateIR(program);

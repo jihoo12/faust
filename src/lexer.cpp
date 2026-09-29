@@ -44,7 +44,25 @@ std::vector<Token> lex(const std::string &source) {
     } else if (source.compare(pos, 2, "->") == 0) {
       advance();
       advance();
-    } else if (std::string("(){}:,;=!+-*").find(ch) != std::string::npos) {
+    } else if (source.compare(pos, 2, "&&") == 0) {
+      advance();
+      advance();
+    } else if (source.compare(pos, 2, "||") == 0) {
+      advance();
+      advance();
+    } else if (source.compare(pos, 2, "<=") == 0) {
+      advance();
+      advance();
+    } else if (source.compare(pos, 2, ">=") == 0) {
+      advance();
+      advance();
+    } else if (source.compare(pos, 2, "==") == 0) {
+      advance();
+      advance();
+    } else if (source.compare(pos, 2, "!=") == 0) {
+      advance();
+      advance();
+    } else if (std::string("(){}:,;=!+-*<>").find(ch) != std::string::npos) {
       advance();
     } else {
       fail(token, "unexpected character");

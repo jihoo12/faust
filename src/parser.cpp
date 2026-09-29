@@ -23,15 +23,31 @@ class Parser {
       fail(peek(), "expected '" + text + "'");
     return take();
   }
+  bool isIdentifier(const Token &t) const {
+    if (t.text.empty())
+      return false;
+    if (!(std::isalpha(static_cast<unsigned char>(t.text[0])) ||
+          t.text[0] == '_'))
+      return false;
+    if (t.text == "fn" || t.text == "let" || t.text == "return" ||
+        t.text == "i32" || t.text == "bool" || t.text == "if" ||
+        t.text == "else" || t.text == "while" || t.text == "true" ||
+        t.text == "false")
+      return false;
+    return true;
+  }
   Token identifier() {
     const auto &t = peek();
-    if (t.text.empty() ||
-        !(std::isalpha(static_cast<unsigned char>(t.text[0])) ||
-          t.text[0] == '_') ||
-        t.text == "fn" || t.text == "let" || t.text == "return" ||
-        t.text == "i32")
+    if (!isIdentifier(t))
       fail(t, "expected an identifier");
     return take();
+  }
+  Type parseType() {
+    if (accept("i32"))
+      return Type::I32;
+    if (accept("bool"))
+      return Type::Bool;
+    fail(peek(), "expected a type");
   }
   std::unique_ptr<Expr> primary() {
     Token token = peek();
@@ -41,7 +57,6 @@ class Parser {
       return result;
     }
     if (accept("-")) {
-      // Accept the negative endpoint without accepting 2147483648 on its own.
       if (accept("2147483648")) {
         auto result = std::make_unique<Expr>();
         result->kind = Expr::Integer;
@@ -53,6 +68,27 @@ class Parser {
       result->kind = Expr::Negate;
       result->token = token;
       result->children.push_back(primary());
+      return result;
+    }
+    if (accept("!")) {
+      auto result = std::make_unique<Expr>();
+      result->kind = Expr::Not;
+      result->token = token;
+      result->children.push_back(primary());
+      return result;
+    }
+    if (accept("true")) {
+      auto result = std::make_unique<Expr>();
+      result->kind = Expr::Boolean;
+      result->token = token;
+      result->value = 1;
+      return result;
+    }
+    if (accept("false")) {
+      auto result = std::make_unique<Expr>();
+      result->kind = Expr::Boolean;
+      result->token = token;
+      result->value = 0;
       return result;
     }
     auto result = std::make_unique<Expr>();
@@ -87,20 +123,118 @@ class Parser {
     auto left = primary();
     while (true) {
       const auto op = peek();
-      int precedence = op.text == "*"                       ? 20
-                       : (op.text == "+" || op.text == "-") ? 10
-                                                            : -1;
+      int precedence;
+      Expr::Kind kind;
+      if (op.text == "||") {
+        precedence = 5;
+        kind = Expr::Logical;
+      } else if (op.text == "&&") {
+        precedence = 6;
+        kind = Expr::Logical;
+      } else if (op.text == "==" || op.text == "!=") {
+        precedence = 7;
+        kind = Expr::Compare;
+      } else if (op.text == "<" || op.text == ">" || op.text == "<=" ||
+                 op.text == ">=") {
+        precedence = 8;
+        kind = Expr::Compare;
+      } else if (op.text == "*") {
+        precedence = 20;
+        kind = Expr::Binary;
+      } else if (op.text == "+" || op.text == "-") {
+        precedence = 10;
+        kind = Expr::Binary;
+      } else {
+        break;
+      }
       if (precedence < minimum)
         break;
       take();
       auto result = std::make_unique<Expr>();
-      result->kind = Expr::Binary;
+      result->kind = kind;
       result->token = op;
       result->children.push_back(std::move(left));
       result->children.push_back(expression(precedence + 1));
       left = std::move(result);
     }
     return left;
+  }
+  std::vector<Statement> parseBlock() {
+    expect("{");
+    std::vector<Statement> body;
+    while (!accept("}")) {
+      if (peek().text.empty())
+        fail(peek(), "expected '}'");
+      body.push_back(parseStatement());
+    }
+    return body;
+  }
+  Statement parseStatement() {
+    Statement statement;
+    statement.token = peek();
+    if (accept("let")) {
+      statement.kind = Statement::Let;
+      statement.token = identifier();
+      expect("=");
+      statement.expression = expression();
+      expect(";");
+    } else if (accept("return")) {
+      statement.kind = Statement::Return;
+      statement.expression = expression();
+      expect(";");
+    } else if (accept("if")) {
+      statement.kind = Statement::If;
+      if (accept("(")) {
+        statement.condition = expression();
+        expect(")");
+      } else {
+        statement.condition = expression();
+      }
+      statement.body = parseBlock();
+      if (accept("else")) {
+        if (accept("if")) {
+          Statement nestedIf;
+          nestedIf.kind = Statement::If;
+          if (accept("(")) {
+            nestedIf.condition = expression();
+            expect(")");
+          } else {
+            nestedIf.condition = expression();
+          }
+          nestedIf.body = parseBlock();
+          if (accept("else")) {
+            nestedIf.elseBody = parseBlock();
+          }
+          statement.elseBody.push_back(std::move(nestedIf));
+        } else {
+          statement.elseBody = parseBlock();
+        }
+      }
+    } else if (accept("while")) {
+      statement.kind = Statement::While;
+      if (accept("(")) {
+        statement.condition = expression();
+        expect(")");
+      } else {
+        statement.condition = expression();
+      }
+      statement.body = parseBlock();
+    } else {
+      Token ident = peek();
+      if (isIdentifier(ident) && pos + 1 < tokens.size() &&
+          tokens[pos + 1].text == "=") {
+        statement.kind = Statement::Assign;
+        statement.token = take();
+        take();
+        statement.expression = expression();
+        expect(";");
+      } else {
+        statement.kind = Statement::Evaluate;
+        statement.expression = expression();
+        expect(";");
+      }
+    }
+    return statement;
   }
 
 public:
@@ -116,12 +250,12 @@ public:
         do {
           function.parameters.push_back(identifier());
           expect(":");
-          expect("i32");
+          function.paramTypes.push_back(parseType());
         } while (accept(","));
         expect(")");
       }
       expect("->");
-      expect("i32");
+      function.returnType = parseType();
       if (accept("!")) {
         expect("{");
         if (!accept("}")) {
@@ -143,21 +277,9 @@ public:
           fail(peek(), "expected '}'");
         if (returned)
           fail(peek(), "statement after return");
-        Statement statement;
-        statement.token = peek();
-        if (accept("let")) {
-          statement.kind = Statement::Let;
-          statement.token = identifier();
-          expect("=");
-        } else if (accept("return")) {
-          statement.kind = Statement::Return;
+        function.body.push_back(parseStatement());
+        if (function.body.back().kind == Statement::Return)
           returned = true;
-        } else {
-          statement.kind = Statement::Evaluate;
-        }
-        statement.expression = expression();
-        expect(";");
-        function.body.push_back(std::move(statement));
       }
       if (!returned)
         fail(function.name, "function must end with a return statement");

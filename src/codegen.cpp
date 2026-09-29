@@ -17,28 +17,80 @@ class Generator {
   llvm::IRBuilder<> builder{context};
   std::map<std::string, llvm::Function *> functions;
   std::map<std::string, llvm::Value *> locals;
+  llvm::Function *currentFunction = nullptr;
 
-  llvm::Value *emit(const Expr &expr) {
+  llvm::Type *llvmType(Type type) {
+    return type == Type::Bool ? builder.getInt1Ty() : builder.getInt32Ty();
+  }
+
+  llvm::Value *emitExpr(const Expr &expr) {
     switch (expr.kind) {
     case Expr::Integer:
       return builder.getInt32(expr.value);
+    case Expr::Boolean:
+      return builder.getInt1(expr.value != 0);
     case Expr::Variable:
       return locals.at(expr.token.text);
     case Expr::Negate:
-      return builder.CreateNeg(emit(*expr.children[0]));
+      return builder.CreateNeg(emitExpr(*expr.children[0]));
+    case Expr::Not:
+      return builder.CreateXor(emitExpr(*expr.children[0]),
+                               builder.getInt1(true));
     case Expr::Binary: {
-      auto *left = emit(*expr.children[0]);
-      auto *right = emit(*expr.children[1]);
+      auto *left = emitExpr(*expr.children[0]);
+      auto *right = emitExpr(*expr.children[1]);
       if (expr.token.text == "+")
         return builder.CreateAdd(left, right);
       if (expr.token.text == "-")
         return builder.CreateSub(left, right);
       return builder.CreateMul(left, right);
     }
+    case Expr::Compare: {
+      auto *left = emitExpr(*expr.children[0]);
+      auto *right = emitExpr(*expr.children[1]);
+      if (expr.token.text == "<")
+        return builder.CreateICmpSLT(left, right);
+      if (expr.token.text == ">")
+        return builder.CreateICmpSGT(left, right);
+      if (expr.token.text == "<=")
+        return builder.CreateICmpSLE(left, right);
+      if (expr.token.text == ">=")
+        return builder.CreateICmpSGE(left, right);
+      if (expr.token.text == "==")
+        return builder.CreateICmpEQ(left, right);
+      return builder.CreateICmpNE(left, right);
+    }
+    case Expr::Logical: {
+      auto *left = emitExpr(*expr.children[0]);
+      bool isAnd = expr.token.text == "&&";
+      auto *rhsBlock =
+          llvm::BasicBlock::Create(context, "rhs", currentFunction);
+      auto *shortBlock =
+          llvm::BasicBlock::Create(context, "short", currentFunction);
+      auto *mergeBlock =
+          llvm::BasicBlock::Create(context, "merge", currentFunction);
+      builder.CreateCondBr(left, isAnd ? rhsBlock : shortBlock,
+                           isAnd ? shortBlock : rhsBlock);
+      builder.SetInsertPoint(rhsBlock);
+      auto *right = emitExpr(*expr.children[1]);
+      builder.CreateBr(mergeBlock);
+      builder.SetInsertPoint(shortBlock);
+      builder.CreateBr(mergeBlock);
+      builder.SetInsertPoint(mergeBlock);
+      auto *phi = builder.CreatePHI(builder.getInt1Ty(), 2);
+      if (isAnd) {
+        phi->addIncoming(right, rhsBlock);
+        phi->addIncoming(builder.getInt1(false), shortBlock);
+      } else {
+        phi->addIncoming(builder.getInt1(true), shortBlock);
+        phi->addIncoming(right, rhsBlock);
+      }
+      return phi;
+    }
     case Expr::Call: {
       std::vector<llvm::Value *> arguments;
       for (const auto &child : expr.children)
-        arguments.push_back(emit(*child));
+        arguments.push_back(emitExpr(*child));
       if (expr.token.text == "print") {
         auto printfFunction = module.getOrInsertFunction(
             "printf", llvm::FunctionType::get(builder.getInt32Ty(),
@@ -53,15 +105,91 @@ class Generator {
     throw std::runtime_error("internal error: unknown expression");
   }
 
+  void emitStatement(const Statement &statement) {
+    switch (statement.kind) {
+    case Statement::Let:
+      locals[statement.token.text] = emitExpr(*statement.expression);
+      break;
+    case Statement::Evaluate:
+      emitExpr(*statement.expression);
+      break;
+    case Statement::Return:
+      builder.CreateRet(emitExpr(*statement.expression));
+      break;
+    case Statement::Assign:
+      locals[statement.token.text] = emitExpr(*statement.expression);
+      break;
+    case Statement::If: {
+      auto *cond = emitExpr(*statement.condition);
+      auto *thenBlock =
+          llvm::BasicBlock::Create(context, "then", currentFunction);
+      auto *elseBlock =
+          llvm::BasicBlock::Create(context, "else", currentFunction);
+      auto *mergeBlock =
+          llvm::BasicBlock::Create(context, "merge", currentFunction);
+      builder.CreateCondBr(cond, thenBlock, elseBlock);
+      builder.SetInsertPoint(thenBlock);
+      for (const auto &s : statement.body)
+        emitStatement(s);
+      if (!builder.GetInsertBlock()->getTerminator())
+        builder.CreateBr(mergeBlock);
+      builder.SetInsertPoint(elseBlock);
+      for (const auto &s : statement.elseBody)
+        emitStatement(s);
+      if (!builder.GetInsertBlock()->getTerminator())
+        builder.CreateBr(mergeBlock);
+      builder.SetInsertPoint(mergeBlock);
+      break;
+    }
+    case Statement::While: {
+      auto *predBlock = builder.GetInsertBlock();
+      auto *loopBlock =
+          llvm::BasicBlock::Create(context, "loop", currentFunction);
+      auto *bodyBlock =
+          llvm::BasicBlock::Create(context, "body", currentFunction);
+      auto *exitBlock =
+          llvm::BasicBlock::Create(context, "exit", currentFunction);
+      builder.CreateBr(loopBlock);
+      builder.SetInsertPoint(loopBlock);
+      std::vector<std::string> modifiedVars;
+      for (const auto &s : statement.body) {
+        if (s.kind == Statement::Assign)
+          modifiedVars.push_back(s.token.text);
+      }
+      std::vector<llvm::PHINode *> phis;
+      for (const auto &var : modifiedVars) {
+        auto *phi = builder.CreatePHI(locals[var]->getType(), 2,
+                                      var + ".phi");
+        phi->addIncoming(locals[var], predBlock);
+        phis.push_back(phi);
+        locals[var] = phi;
+      }
+      auto *cond = emitExpr(*statement.condition);
+      builder.CreateCondBr(cond, bodyBlock, exitBlock);
+      builder.SetInsertPoint(bodyBlock);
+      for (const auto &s : statement.body)
+        emitStatement(s);
+      if (!builder.GetInsertBlock()->getTerminator())
+        builder.CreateBr(loopBlock);
+      for (size_t i = 0; i < modifiedVars.size(); ++i) {
+        phis[i]->addIncoming(locals[modifiedVars[i]],
+                              builder.GetInsertBlock());
+      }
+      builder.SetInsertPoint(exitBlock);
+      break;
+    }
+    }
+  }
+
 public:
   std::string generate(const std::vector<Function> &program) {
     for (const auto &function : program) {
-      std::vector<llvm::Type *> parameters(function.parameters.size(),
-                                           builder.getInt32Ty());
-      auto *type =
-          llvm::FunctionType::get(builder.getInt32Ty(), parameters, false);
+      std::vector<llvm::Type *> parameters;
+      for (const auto &paramType : function.paramTypes)
+        parameters.push_back(llvmType(paramType));
+      auto *type = llvm::FunctionType::get(llvmType(function.returnType),
+                                            parameters, false);
       bool isMain = function.name.text == "main";
-      // Keep source names separate from C runtime symbols such as printf.
       functions[function.name.text] = llvm::Function::Create(
           type,
           isMain ? llvm::Function::ExternalLinkage
@@ -70,6 +198,7 @@ public:
     }
     for (const auto &function : program) {
       auto *target = functions.at(function.name.text);
+      currentFunction = target;
       builder.SetInsertPoint(
           llvm::BasicBlock::Create(context, "entry", target));
       locals.clear();
@@ -77,13 +206,8 @@ public:
         target->getArg(i)->setName(function.parameters[i].text);
         locals[function.parameters[i].text] = target->getArg(i);
       }
-      for (const auto &statement : function.body) {
-        auto *value = emit(*statement.expression);
-        if (statement.kind == Statement::Let)
-          locals[statement.token.text] = value;
-        if (statement.kind == Statement::Return)
-          builder.CreateRet(value);
-      }
+      for (const auto &statement : function.body)
+        emitStatement(statement);
     }
     if (llvm::verifyModule(module, &llvm::errs()))
       throw std::runtime_error("internal error: invalid LLVM module");

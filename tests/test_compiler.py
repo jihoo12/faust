@@ -146,6 +146,113 @@ class CompilerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("define i32 @main()", result.stdout)
 
+    def test_boolean_literals(self):
+        self.execute("fn main() -> i32 !{alloc,io,block} {\n"
+                     "if true { print(1); } else { print(0); }\n"
+                     "if false { print(2); } else { print(3); }\n"
+                     "return 0; }", "1\n3\n")
+
+    def test_comparison_operators(self):
+        self.execute("fn main() -> i32 !{alloc,io,block} {\n"
+                     "if 1 < 2 { print(1); } else { print(0); }\n"
+                     "if 2 > 3 { print(2); } else { print(0); }\n"
+                     "if 3 <= 3 { print(1); } else { print(0); }\n"
+                     "if 4 >= 5 { print(2); } else { print(0); }\n"
+                     "if 5 == 5 { print(1); } else { print(0); }\n"
+                     "if 6 != 7 { print(1); } else { print(0); }\n"
+                     "return 0; }", "1\n0\n1\n0\n1\n1\n")
+
+    def test_logical_operators(self):
+        self.execute("fn main() -> i32 !{alloc,io,block} {\n"
+                     "if true && true { print(1); } else { print(0); }\n"
+                     "if true && false { print(2); } else { print(0); }\n"
+                     "if false || true { print(1); } else { print(0); }\n"
+                     "if false || false { print(2); } else { print(0); }\n"
+                     "if !false { print(1); } else { print(0); }\n"
+                     "if !true { print(2); } else { print(0); }\n"
+                     "return 0; }", "1\n0\n1\n0\n1\n0\n")
+
+    def test_short_circuit_evaluation(self):
+        self.execute("fn side_effect() -> i32 !{alloc,io,block} {\n"
+                     "print(99); return 0; }\n"
+                     "fn main() -> i32 !{alloc,io,block} {\n"
+                     "if false && side_effect() == 1 { print(1); }\n"
+                     "if true || side_effect() == 1 { print(2); }\n"
+                     "return 0; }", "2\n")
+
+    def test_if_else_if_chain(self):
+        self.execute("fn main() -> i32 !{alloc,io,block} {\n"
+                     "let x = 2;\n"
+                     "if x == 1 { print(1); }\n"
+                     "else if x == 2 { print(2); }\n"
+                     "else { print(3); }\n"
+                     "return 0; }", "2\n")
+
+    def test_while_loop(self):
+        self.execute("fn main() -> i32 !{alloc,io,block} {\n"
+                     "let i = 3;\n"
+                     "while i > 0 {\n"
+                     "print(i);\n"
+                     "i = i - 1;\n"
+                     "}\n"
+                     "return 0; }", "3\n2\n1\n")
+
+    def test_nested_control_flow(self):
+        self.execute("fn main() -> i32 !{alloc,io,block} {\n"
+                     "let i = 2;\n"
+                     "while i > 0 {\n"
+                     "if i == 2 { print(10); } else { print(20); }\n"
+                     "i = i - 1;\n"
+                     "}\n"
+                     "return 0; }", "10\n20\n")
+
+    def test_bool_function_param_and_return(self):
+        self.execute("fn is_positive(x: i32) -> bool {\n"
+                     "return x > 0; }\n"
+                     "fn main() -> i32 !{alloc,io,block} {\n"
+                     "if is_positive(5) { print(1); } else { print(0); }\n"
+                     "if is_positive(-3) { print(2); } else { print(0); }\n"
+                     "return 0; }", "1\n0\n")
+
+    def test_assignment_type_mismatch(self):
+        self.reject("fn main() -> i32 { let x = 1; x = true; return 0; }",
+                    "assignment type mismatch")
+
+    def test_if_condition_must_be_bool(self):
+        self.reject("fn main() -> i32 { if 1 { return 0; } return 0; }",
+                    "if condition must be bool")
+
+    def test_while_condition_must_be_bool(self):
+        self.reject("fn main() -> i32 { while 1 { return 0; } return 0; }",
+                    "while condition must be bool")
+
+    def test_arithmetic_on_bool_rejected(self):
+        self.reject("fn main() -> i32 { let b = true + false; return 0; }",
+                    "arithmetic requires i32 operands")
+
+    def test_comparison_on_bool_rejected(self):
+        self.reject("fn main() -> i32 { let b = true < false; return 0; }",
+                    "comparison requires i32 operands")
+
+    def test_logical_on_i32_rejected(self):
+        self.reject("fn main() -> i32 { let b = 1 && 0; return 0; }",
+                    "logical operators require bool operands")
+
+    def test_not_on_i32_rejected(self):
+        self.reject("fn main() -> i32 { let b = !1; return 0; }",
+                    "'!' requires bool")
+
+    def test_return_type_mismatch(self):
+        self.reject("fn f() -> bool { return 1; }\n"
+                    "fn main() -> i32 { return 0; }",
+                    "return type mismatch")
+
+    def test_bool_return_type(self):
+        self.execute("fn f() -> bool { return true; }\n"
+                     "fn main() -> i32 !{alloc,io,block} {\n"
+                     "if f() { print(1); } else { print(0); }\n"
+                     "return 0; }", "1\n")
+
     def test_cli_errors(self):
         self.source.write_text("fn main() -> i32 { return 0; }")
         for args in ([], ["--unknown"], [str(self.source), "-o"],
