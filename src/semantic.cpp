@@ -41,6 +41,8 @@ bool canImplicitlyConvert(const Expr &expr, const Type &target) {
     return true;
   if (target.kind == Type::I32 && isIntegerType(expr.type))
     return true;
+  if (isIntegerType(expr.type) && isFloatType(target))
+    return true;
   if (expr.kind == Expr::Integer) {
     if (expr.value == 0 && target.kind == Type::Pointer)
       return true;
