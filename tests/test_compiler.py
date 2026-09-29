@@ -289,6 +289,36 @@ class CompilerTests(unittest.TestCase):
         self.reject("fn main() -> i32 { let x = *42; return 0; }",
                     "'*' requires pointer type")
 
+    def test_array_literal_and_index(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "let xs: [4]i32 = [10, 20, 30, 40]; print(xs[2]); return 0; }",
+                     "30\n")
+
+    def test_array_index_assignment(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "let xs = [1, 2, 3]; xs[1] = 42; print(xs[1]); return 0; }",
+                     "42\n")
+
+    def test_array_index_variable(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "let xs = [10, 20, 30]; let i = 2; print(xs[i]); return 0; }",
+                     "30\n")
+
+    def test_array_element_type_mismatch_rejected(self):
+        self.reject("fn main() -> i32 { let xs = [1, true]; return 0; }",
+                    "array elements must have the same type")
+
+    def test_array_index_type_rejected(self):
+        self.reject("fn main() -> i32 { let xs = [1, 2]; let x = xs[true]; return 0; }",
+                    "array index must be an integer")
+
+    def test_empty_array_rejected_without_context(self):
+        self.reject("fn main() -> i32 { let xs = []; return 0; }",
+                    "cannot infer type of empty array")
+
     def test_extern_declaration(self):
         self.execute("extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};\n"
                      "fn main() -> i32 !{asm, syscalls 1} {\n"
