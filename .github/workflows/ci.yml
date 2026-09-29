@@ -21,5 +21,11 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check flake
-        run: nix flake check --print-build-logs
+      - name: Configure Faust
+        run: nix develop --command cmake --fresh -S . -B build -G Ninja
+
+      - name: Build Faust
+        run: nix develop --command cmake --build build
+
+      - name: Run compiler tests
+        run: nix develop --command ctest --test-dir build --output-on-failure
