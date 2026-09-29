@@ -42,14 +42,14 @@ inline bool operator!=(const Type &a, const Type &b) { return !(a == b); }
 
 struct Expr {
   enum Kind { Integer, Boolean, String, Variable, Call, Binary, Negate, Not,
-              AddressOf, Dereference, Compare, Logical } kind;
+              AddressOf, Dereference, ArrayLiteral, Index, Compare, Logical } kind;
   Type type = Type::I32;
   Token token;
   int32_t value = 0;
   std::vector<std::unique_ptr<Expr>> children;
 };
 struct Statement {
-  enum Kind { Let, Evaluate, Return, If, While, Assign, Store, Asm } kind;
+  enum Kind { Let, Evaluate, Return, If, While, Assign, Store, IndexStore, Asm } kind;
   Type type = Type::I32;
   bool hasTypeAnnotation = false;
   Token token;
