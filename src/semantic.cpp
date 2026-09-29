@@ -8,8 +8,11 @@ namespace faust {
 namespace {
 struct Signature {
   std::vector<Type> paramTypes;
+  std::vector<bool> paramIsPointer;
   Type returnType;
-  std::set<std::string> effects;
+  std::set<int> syscalls;
+  bool hasAsm;
+  bool isVariadic;
 };
 
 void checkExpr(Expr &expr, const Function &function,
@@ -22,6 +25,9 @@ void checkExpr(Expr &expr, const Function &function,
   case Expr::Boolean:
     expr.type = Type::Bool;
     break;
+  case Expr::String:
+    expr.type = Type::I32;
+    break;
   case Expr::Variable: {
     auto found = locals.find(expr.token.text);
     if (found == locals.end())
@@ -33,22 +39,33 @@ void checkExpr(Expr &expr, const Function &function,
     auto found = signatures.find(expr.token.text);
     if (found == signatures.end())
       fail(expr.token, "unknown function '" + expr.token.text + "'");
-    if (expr.children.size() != found->second.paramTypes.size())
+    if (expr.children.size() < found->second.paramTypes.size() ||
+        (!found->second.isVariadic && expr.children.size() != found->second.paramTypes.size()))
       fail(expr.token,
            "wrong number of arguments to '" + expr.token.text + "'");
-    for (const auto &effect : found->second.effects) {
-      if (!function.effects.count(effect))
-        fail(expr.token, "call to '" + expr.token.text + "' requires effect '" +
-                              effect + "' in contract of '" +
+    for (int syscall : found->second.syscalls) {
+      if (!function.syscalls.count(syscall))
+        fail(expr.token, "call to '" + expr.token.text + "' requires syscall " +
+                              std::to_string(syscall) + " in contract of '" +
                               function.name.text + "'");
     }
-    for (size_t i = 0; i < expr.children.size(); ++i) {
+    if (found->second.hasAsm && !function.hasAsm)
+      fail(expr.token, "call to '" + expr.token.text + "' requires asm effect in contract of '" +
+                            function.name.text + "'");
+    for (size_t i = 0; i < found->second.paramTypes.size(); ++i) {
       checkExpr(*expr.children[i], function, locals, signatures);
-      if (expr.children[i]->type != found->second.paramTypes[i])
-        fail(expr.children[i]->token,
-             "wrong type for argument " + std::to_string(i + 1) + " to '" +
-                 expr.token.text + "'");
+      if (expr.children[i]->type != found->second.paramTypes[i]) {
+        bool isNullPointer = found->second.paramIsPointer[i] &&
+                             expr.children[i]->kind == Expr::Integer &&
+                             expr.children[i]->value == 0;
+        if (!isNullPointer)
+          fail(expr.children[i]->token,
+               "wrong type for argument " + std::to_string(i + 1) + " to '" +
+                   expr.token.text + "'");
+      }
     }
+    for (size_t i = found->second.paramTypes.size(); i < expr.children.size(); ++i)
+      checkExpr(*expr.children[i], function, locals, signatures);
     expr.type = found->second.returnType;
     break;
   }
@@ -147,19 +164,24 @@ void checkStatement(Statement &statement, const Function &function,
       fail(statement.token, "assignment type mismatch");
     break;
   }
+  case Statement::Asm:
+    if (!function.hasAsm)
+      fail(statement.token, "asm block requires asm effect in contract of '" +
+                            function.name.text + "'");
+    break;
   }
 }
 
 } // namespace
 
 void check(Program &functions) {
-  std::map<std::string, Signature> signatures = {
-      {"print", {{Type::I32}, Type::I32, {"alloc", "block", "io"}}}};
+  std::map<std::string, Signature> signatures;
   for (const auto &function : functions) {
     if (!signatures
              .emplace(function.name.text,
-                      Signature{function.paramTypes, function.returnType,
-                                function.effects})
+                      Signature{function.paramTypes, function.paramIsPointer,
+                                function.returnType, function.syscalls,
+                                function.hasAsm, function.isVariadic})
              .second)
       fail(function.name,
            "duplicate or reserved function '" + function.name.text + "'");
@@ -170,6 +192,10 @@ void check(Program &functions) {
   if (!main->second.paramTypes.empty())
     fail(Token{}, "main must have no parameters");
   for (auto &function : functions) {
+    if (function.isExtern)
+      continue;
+    if (!function.syscalls.empty() && !function.hasAsm)
+      fail(function.name, "function declares syscalls but missing asm effect");
     std::map<std::string, Type> locals;
     for (size_t i = 0; i < function.parameters.size(); ++i) {
       if (!locals.emplace(function.parameters[i].text, function.paramTypes[i])

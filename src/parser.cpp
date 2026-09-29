@@ -32,7 +32,7 @@ class Parser {
     if (t.text == "fn" || t.text == "let" || t.text == "return" ||
         t.text == "i32" || t.text == "bool" || t.text == "if" ||
         t.text == "else" || t.text == "while" || t.text == "true" ||
-        t.text == "false")
+        t.text == "false" || t.text == "extern" || t.text == "asm")
       return false;
     return true;
   }
@@ -47,7 +47,48 @@ class Parser {
       return Type::I32;
     if (accept("bool"))
       return Type::Bool;
+    if (accept("i8"))
+      return Type::I32;
+    if (peek().text == "*") {
+      take();
+      parseType();
+      return Type::I32;
+    }
     fail(peek(), "expected a type");
+  }
+  void parseContract(Function &function) {
+    if (!accept("!"))
+      return;
+    expect("{");
+    if (accept("}"))
+      return;
+    do {
+      if (accept("syscalls")) {
+        while (true) {
+          Token num = peek();
+          if (num.text.empty() ||
+              !std::isdigit(static_cast<unsigned char>(num.text[0])))
+            fail(num, "expected a syscall number");
+          take();
+          int syscall = 0;
+          for (char c : num.text) {
+            syscall = syscall * 10 + (c - '0');
+            if (syscall > 999)
+              fail(num, "syscall number too large");
+          }
+          if (!function.syscalls.insert(syscall).second)
+            fail(num, "duplicate syscall " + num.text);
+          if (accept(",") && peek().text != "asm")
+            continue;
+          break;
+        }
+      } else if (accept("asm")) {
+        function.hasAsm = true;
+      } else {
+        fail(peek(), "expected 'syscalls' or 'asm'");
+      }
+    } while (accept(","));
+    expect("}");
   }
   std::unique_ptr<Expr> primary() {
     Token token = peek();
@@ -89,6 +130,13 @@ class Parser {
       result->kind = Expr::Boolean;
       result->token = token;
       result->value = 0;
+      return result;
+    }
+    if (!token.text.empty() && token.text[0] == '"') {
+      auto result = std::make_unique<Expr>();
+      result->kind = Expr::String;
+      result->token = token;
+      take();
       return result;
     }
     auto result = std::make_unique<Expr>();
@@ -219,6 +267,25 @@ class Parser {
         statement.condition = expression();
       }
       statement.body = parseBlock();
+    } else if (accept("asm")) {
+      statement.kind = Statement::Asm;
+      expect("{");
+      Token code = peek();
+      if (code.text.empty() || code.text[0] != '"')
+        fail(code, "expected assembly string");
+      take();
+      statement.asmCode = code.text;
+      if (accept(":")) {
+        Token outputs = peek();
+        take();
+        statement.asmOutputs = outputs.text;
+        if (accept(":")) {
+          Token inputs = peek();
+          take();
+          statement.asmInputs = inputs.text;
+        }
+      }
+      expect("}");
     } else {
       Token ident = peek();
       if (isIdentifier(ident) && pos + 1 < tokens.size() &&
@@ -242,47 +309,53 @@ public:
   std::vector<Function> parse() {
     std::vector<Function> functions;
     while (!peek().text.empty()) {
-      expect("fn");
+      bool isExtern = accept("extern");
+      if (!isExtern)
+        expect("fn");
       Function function;
       function.name = identifier();
+      function.isExtern = isExtern;
       expect("(");
       if (!accept(")")) {
-        do {
+        while (true) {
+          if (accept("...")) {
+            function.isVariadic = true;
+            break;
+          }
           function.parameters.push_back(identifier());
           expect(":");
+          bool isPointer = false;
+          if (peek().text == "*") {
+            take();
+            isPointer = true;
+          }
           function.paramTypes.push_back(parseType());
-        } while (accept(","));
+          function.paramIsPointer.push_back(isPointer);
+          if (!accept(","))
+            break;
+        }
         expect(")");
       }
       expect("->");
       function.returnType = parseType();
-      if (accept("!")) {
+      parseContract(function);
+      if (function.isExtern) {
+        expect(";");
+      } else {
         expect("{");
-        if (!accept("}")) {
-          do {
-            Token effect = identifier();
-            if (effect.text != "io" && effect.text != "alloc" &&
-                effect.text != "block")
-              fail(effect, "unknown effect '" + effect.text + "'");
-            if (!function.effects.insert(effect.text).second)
-              fail(effect, "duplicate effect '" + effect.text + "'");
-          } while (accept(","));
-          expect("}");
+        bool returned = false;
+        while (!accept("}")) {
+          if (peek().text.empty())
+            fail(peek(), "expected '}'");
+          if (returned)
+            fail(peek(), "statement after return");
+          function.body.push_back(parseStatement());
+          if (function.body.back().kind == Statement::Return)
+            returned = true;
         }
+        if (!returned)
+          fail(function.name, "function must end with a return statement");
       }
-      expect("{");
-      bool returned = false;
-      while (!accept("}")) {
-        if (peek().text.empty())
-          fail(peek(), "expected '}'");
-        if (returned)
-          fail(peek(), "statement after return");
-        function.body.push_back(parseStatement());
-        if (function.body.back().kind == Statement::Return)
-          returned = true;
-      }
-      if (!returned)
-        fail(function.name, "function must end with a return statement");
       functions.push_back(std::move(function));
     }
     return functions;

@@ -1,8 +1,10 @@
-fn report(value: i32) -> i32 !{alloc, io, block} {
-  return print(value);
+extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};
+
+fn report(value: i32) -> i32 !{asm, syscalls 1} {
+  return write(1, 0, 0);
 }
 
-// Rejected: main does not grant the effects required by report.
+// Rejected: main does not grant the syscall required by report.
 fn main() -> i32 {
   return report(42);
 }

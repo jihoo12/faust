@@ -62,6 +62,22 @@ std::vector<Token> lex(const std::string &source) {
     } else if (source.compare(pos, 2, "!=") == 0) {
       advance();
       advance();
+    } else if (ch == '"') {
+      advance();
+      while (pos < source.size() && source[pos] != '"') {
+        if (source[pos] == '\\' && pos + 1 < source.size()) {
+          advance();
+          advance();
+        } else {
+          advance();
+        }
+      }
+      if (pos < source.size())
+        advance();
+    } else if (source.compare(pos, 3, "...") == 0) {
+      advance();
+      advance();
+      advance();
     } else if (std::string("(){}:,;=!+-*<>").find(ch) != std::string::npos) {
       advance();
     } else {

@@ -1,10 +1,11 @@
 #include "faust/codegen.h"
+#include "faust/ir.h"
 
 #include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/InlineAsm.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Verifier.h>
-#include <llvm/Support/raw_ostream.h>
 
 #include <map>
 #include <stdexcept>
@@ -29,6 +30,26 @@ class Generator {
       return builder.getInt32(expr.value);
     case Expr::Boolean:
       return builder.getInt1(expr.value != 0);
+    case Expr::String: {
+      std::string text = expr.token.text;
+      if (text.size() >= 2 && text.front() == '"' && text.back() == '"')
+        text = text.substr(1, text.size() - 2);
+      std::string processed;
+      for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '\\' && i + 1 < text.size()) {
+          ++i;
+          if (text[i] == 'n') processed += '\n';
+          else if (text[i] == 't') processed += '\t';
+          else if (text[i] == 'r') processed += '\r';
+          else if (text[i] == '\\') processed += '\\';
+          else if (text[i] == '"') processed += '"';
+          else processed += text[i];
+        } else {
+          processed += text[i];
+        }
+      }
+      return builder.CreateGlobalString(processed);
+    }
     case Expr::Variable:
       return locals.at(expr.token.text);
     case Expr::Negate:
@@ -91,14 +112,6 @@ class Generator {
       std::vector<llvm::Value *> arguments;
       for (const auto &child : expr.children)
         arguments.push_back(emitExpr(*child));
-      if (expr.token.text == "print") {
-        auto printfFunction = module.getOrInsertFunction(
-            "printf", llvm::FunctionType::get(builder.getInt32Ty(),
-                                              {builder.getPtrTy()}, true));
-        auto *format = builder.CreateGlobalString("%d\n", "format");
-        builder.CreateCall(printfFunction, {format, arguments[0]});
-        return builder.getInt32(0);
-      }
       return builder.CreateCall(functions.at(expr.token.text), arguments);
     }
     }
@@ -178,6 +191,22 @@ class Generator {
       builder.SetInsertPoint(exitBlock);
       break;
     }
+    case Statement::Asm: {
+      std::string asmStr = statement.asmCode;
+      if (!asmStr.empty() && asmStr.front() == '"')
+        asmStr = asmStr.substr(1);
+      if (!asmStr.empty() && asmStr.back() == '"')
+        asmStr.pop_back();
+      std::string constraints = statement.asmOutputs;
+      if (!statement.asmInputs.empty())
+        constraints += "," + statement.asmInputs;
+      bool hasOutputs = !statement.asmOutputs.empty();
+      auto *retTy = hasOutputs ? builder.getInt32Ty() : builder.getVoidTy();
+      auto *asmTy = llvm::FunctionType::get(retTy, {}, false);
+      auto *asmFn = llvm::InlineAsm::get(asmTy, asmStr, constraints, true);
+      builder.CreateCall(asmFn, {});
+      break;
+    }
     }
   }
 
@@ -185,18 +214,26 @@ public:
   std::string generate(const std::vector<Function> &program) {
     for (const auto &function : program) {
       std::vector<llvm::Type *> parameters;
-      for (const auto &paramType : function.paramTypes)
-        parameters.push_back(llvmType(paramType));
-      auto *type = llvm::FunctionType::get(llvmType(function.returnType),
-                                            parameters, false);
+      for (size_t i = 0; i < function.paramTypes.size(); ++i)
+        parameters.push_back(function.paramIsPointer[i] ? builder.getPtrTy()
+                                                        : llvmType(function.paramTypes[i]));
+      auto *type = llvm::FunctionType::get(
+          function.isExtern ? builder.getInt32Ty()
+                             : llvmType(function.returnType),
+          parameters, function.isVariadic);
       bool isMain = function.name.text == "main";
+      llvm::Function::LinkageTypes linkage = llvm::Function::InternalLinkage;
+      if (isMain || function.isExtern)
+        linkage = llvm::Function::ExternalLinkage;
+      std::string irName = isMain ? "main" : "faust." + function.name.text;
+      if (function.isExtern)
+        irName = function.name.text;
       functions[function.name.text] = llvm::Function::Create(
-          type,
-          isMain ? llvm::Function::ExternalLinkage
-                 : llvm::Function::InternalLinkage,
-          isMain ? "main" : "faust." + function.name.text, module);
+          type, linkage, irName, module);
     }
     for (const auto &function : program) {
+      if (function.isExtern)
+        continue;
       auto *target = functions.at(function.name.text);
       currentFunction = target;
       builder.SetInsertPoint(
@@ -211,10 +248,7 @@ public:
     }
     if (llvm::verifyModule(module, &llvm::errs()))
       throw std::runtime_error("internal error: invalid LLVM module");
-    std::string output;
-    llvm::raw_string_ostream stream(output);
-    module.print(stream, nullptr);
-    return output;
+    return printIR(module);
   }
 };
 } // namespace

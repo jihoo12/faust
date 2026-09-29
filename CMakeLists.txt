@@ -12,7 +12,7 @@ add_library(faust_frontend STATIC
 target_compile_features(faust_frontend PUBLIC cxx_std_17)
 target_include_directories(faust_frontend PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-add_library(faust_codegen STATIC src/codegen.cpp)
+add_library(faust_codegen STATIC src/codegen.cpp src/ir.cpp)
 target_link_libraries(faust_codegen PUBLIC faust_frontend PRIVATE LLVM)
 target_include_directories(faust_codegen SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
 separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND "${LLVM_DEFINITIONS}")
