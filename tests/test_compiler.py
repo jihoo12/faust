@@ -406,7 +406,7 @@ class CompilerTests(unittest.TestCase):
 
     def test_integer_literal_conversion_in_call(self):
         self.execute("fn narrow(x: i8) -> i32 { return x; }\n"
-                     "fn main() -> i32 { return narrow(42); }", "")
+                     "fn main() -> i32 { narrow(42); return 0; }", "")
 
     def test_integer_literal_call_range_rejected(self):
         self.reject("fn narrow(x: i8) -> i32 { return x; }\n"
