@@ -301,9 +301,7 @@ public:
       for (Type type : function.paramTypes)
         parameters.push_back(llvmType(type));
       auto *type = llvm::FunctionType::get(
-          function.isExtern ? builder.getInt32Ty()
-                             : llvmType(function.returnType),
-          parameters, function.isVariadic);
+          llvmType(function.returnType), parameters, function.isVariadic);
       bool isMain = function.name.text == "main";
       llvm::Function::LinkageTypes linkage = llvm::Function::InternalLinkage;
       if (isMain || function.isExtern)
