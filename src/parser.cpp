@@ -47,6 +47,17 @@ class Parser {
     return take();
   }
   Type parseType() {
+    if (accept("[")) {
+      Token length = take();
+      if (length.text.empty() ||
+          !std::isdigit(static_cast<unsigned char>(length.text[0])))
+        fail(length, "expected array length");
+      size_t count = 0;
+      for (char digit : length.text)
+        count = count * 10 + static_cast<size_t>(digit - '0');
+      expect("]");
+      return Type::array(parseType(), count);
+    }
     if (accept("i8")) return Type::I8;
     if (accept("u8")) return Type::U8;
     if (accept("i16")) return Type::I16;
@@ -139,6 +150,18 @@ class Parser {
       result->children.push_back(primary());
       return result;
     }
+    if (accept("[")) {
+      auto result = std::make_unique<Expr>();
+      result->kind = Expr::ArrayLiteral;
+      result->token = token;
+      if (!accept("]")) {
+        do {
+          result->children.push_back(expression());
+        } while (accept(","));
+        expect("]");
+      }
+      return result;
+    }
     if (accept("true")) {
       auto result = std::make_unique<Expr>();
       result->kind = Expr::Boolean;
@@ -185,6 +208,16 @@ class Parser {
         } while (accept(","));
         expect(")");
       }
+    }
+    while (accept("[")) {
+      Token bracket = tokens[pos - 1];
+      auto index = std::make_unique<Expr>();
+      index->kind = Expr::Index;
+      index->token = bracket;
+      index->children.push_back(std::move(result));
+      index->children.push_back(expression());
+      expect("]");
+      result = std::move(index);
     }
     return result;
   }
@@ -323,6 +356,20 @@ class Parser {
     } else {
       Token ident = peek();
       if (isIdentifier(ident) && pos + 1 < tokens.size() &&
+          tokens[pos + 1].text == "[") {
+        auto target = primary();
+        if (target->kind == Expr::Index && accept("=")) {
+          statement.kind = Statement::IndexStore;
+          statement.token = ident;
+          statement.condition = std::move(target);
+          statement.expression = expression();
+          expect(";");
+        } else {
+          statement.kind = Statement::Evaluate;
+          statement.expression = std::move(target);
+          expect(";");
+        }
+      } else if (isIdentifier(ident) && pos + 1 < tokens.size() &&
           tokens[pos + 1].text == "=") {
         statement.kind = Statement::Assign;
         statement.token = take();
