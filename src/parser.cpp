@@ -209,6 +209,11 @@ class Parser {
         expect(")");
       }
     }
+    return result;
+  }
+
+  std::unique_ptr<Expr> postfix() {
+    auto result = primary();
     while (accept("[")) {
       Token bracket = tokens[pos - 1];
       auto index = std::make_unique<Expr>();
@@ -221,8 +226,9 @@ class Parser {
     }
     return result;
   }
+
   std::unique_ptr<Expr> expression(int minimum = 0) {
-    auto left = primary();
+    auto left = postfix();
     while (true) {
       const auto op = peek();
       int precedence;
