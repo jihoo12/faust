@@ -354,6 +354,20 @@ class CompilerTests(unittest.TestCase):
         self.reject("fn main() -> i32 !{syscalls 1} { return 0; }",
                      "function declares syscalls but missing asm effect")
 
+    def test_asm_block_no_contract_rejected(self):
+        self.reject("fn main() -> i32 { asm { \"nop\" } return 0; }",
+                     "requires asm effect")
+
+    def test_syscall_call_no_contract_rejected(self):
+        self.reject("fn helper() -> i32 !{asm, syscalls 1} { return 0; }\n"
+                     "fn main() -> i32 { return helper(); }",
+                     "requires syscall 1")
+
+    def test_asm_and_syscall_no_contract_rejected(self):
+        self.reject("fn helper() -> i32 !{asm, syscalls 1} { return 0; }\n"
+                     "fn main() -> i32 { asm { \"nop\" } return helper(); }",
+                     "requires asm effect")
+
     def test_syscall_multiple_all_required(self):
         self.reject("extern read(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 0};\n"
                      "extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};\n"
