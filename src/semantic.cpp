@@ -39,9 +39,14 @@ bool canImplicitlyConvert(const Expr &expr, const Type &target) {
       expr.type.element && target.element &&
       *expr.type.element == *target.element)
     return true;
-  if (expr.kind == Expr::Integer && expr.value == 0 &&
-      target.kind == Type::Pointer)
+  if (target.kind == Type::I32 && isIntegerType(expr.type))
     return true;
+  if (expr.kind == Expr::Integer) {
+    if (expr.value == 0 && target.kind == Type::Pointer)
+      return true;
+    if (isIntegerType(target) || isFloatType(target))
+      return true;
+  }
   return false;
 }
 
@@ -84,6 +89,16 @@ const char *typeName(Type type) {
   return "unknown";
 }
 
+void requireImplicitConversion(const Expr &expr, const Type &target,
+                               const Token &token, const std::string &message) {
+  if (!canImplicitlyConvert(expr, target))
+    fail(token, message);
+  if (expr.kind == Expr::Integer && isIntegerType(target) &&
+      !fitsInRange(expr.value, target))
+    fail(token, "integer literal is outside the range of " +
+                    std::string(typeName(target)));
+}
+
 void checkExpr(Expr &expr, const Function &function,
                const std::map<std::string, Type> &locals,
                const std::map<std::string, Signature> &signatures) {
@@ -123,10 +138,10 @@ void checkExpr(Expr &expr, const Function &function,
                             function.name.text + "'");
     for (size_t i = 0; i < found->second.paramTypes.size(); ++i) {
       checkExpr(*expr.children[i], function, locals, signatures);
-      if (!canImplicitlyConvert(*expr.children[i], found->second.paramTypes[i]))
-        fail(expr.children[i]->token,
-             "wrong type for argument " + std::to_string(i + 1) + " to '" +
-                 expr.token.text + "'");
+      requireImplicitConversion(
+          *expr.children[i], found->second.paramTypes[i], expr.children[i]->token,
+          "wrong type for argument " + std::to_string(i + 1) + " to '" +
+              expr.token.text + "'");
     }
     for (size_t i = found->second.paramTypes.size(); i < expr.children.size(); ++i)
       checkExpr(*expr.children[i], function, locals, signatures);
@@ -214,18 +229,8 @@ void checkStatement(Statement &statement, const Function &function,
   case Statement::Let:
     checkExpr(*statement.expression, function, locals, signatures);
     if (statement.hasTypeAnnotation) {
-      if (statement.type != statement.expression->type) {
-        bool isIntLiteral = statement.expression->kind == Expr::Integer;
-        bool isCompatible = isIntLiteral && isIntegerType(statement.type);
-        bool isIntToFloat = isIntLiteral && isFloatType(statement.type);
-        if (!isCompatible && !isIntToFloat)
-          fail(statement.token, "assignment type mismatch");
-      }
-      if (statement.expression->kind == Expr::Integer && isIntegerType(statement.type)) {
-        int64_t val = statement.expression->value;
-        if (!fitsInRange(val, statement.type))
-          fail(statement.token, "integer literal is outside the range of " + std::string(typeName(statement.type)));
-      }
+      requireImplicitConversion(*statement.expression, statement.type,
+                                statement.token, "assignment type mismatch");
     } else {
       statement.type = statement.expression->type;
     }
@@ -243,12 +248,8 @@ void checkStatement(Statement &statement, const Function &function,
       if (!statement.expression)
         fail(statement.token, "return statement requires an expression");
       checkExpr(*statement.expression, function, locals, signatures);
-      if (statement.expression->type != function.returnType) {
-        bool isIntToI32 = function.returnType == Type::I32 &&
-                         isIntegerType(statement.expression->type);
-        if (!isIntToI32)
-          fail(statement.token, "return type mismatch");
-      }
+      requireImplicitConversion(*statement.expression, function.returnType,
+                                statement.token, "return type mismatch");
     }
     break;
   case Statement::If:
@@ -284,8 +285,8 @@ void checkStatement(Statement &statement, const Function &function,
     if (!isAssignable(*statement.condition))
       fail(statement.token, "left side of assignment is not assignable");
     checkExpr(*statement.expression, function, locals, signatures);
-    if (!canImplicitlyConvert(*statement.expression, statement.condition->type))
-      fail(statement.token, "assignment type mismatch");
+    requireImplicitConversion(*statement.expression, statement.condition->type,
+                              statement.token, "assignment type mismatch");
     break;
   case Statement::Asm:
     if (!function.hasAsm)
