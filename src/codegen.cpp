@@ -413,7 +413,7 @@ class Generator {
   }
 
 public:
-  std::unique_ptr<llvm::Module> generateModule(const Program &program) {
+  void generateModule(const Program &program) {
     for (const auto &decl : program.structs) {
       structTypes[decl.name.text] =
           llvm::StructType::create(context, "faust." + decl.name.text);
@@ -468,16 +468,15 @@ public:
     }
     if (llvm::verifyModule(module, &llvm::errs()))
       throw std::runtime_error("internal error: invalid LLVM module");
-    return std::make_unique<llvm::Module>(std::move(module));
   }
 
   std::string generate(const Program &program) {
-    auto generated = generateModule(program);
-    return printIR(*generated);
+    generateModule(program);
+    return printIR(module);
   }
 
   void generateObject(const Program &program, const std::string &path) {
-    auto generated = generateModule(program);
+    generateModule(program);
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
 
@@ -494,8 +493,8 @@ public:
     if (!targetMachine)
       throw std::runtime_error("cannot create native target machine");
 
-    generated->setTargetTriple(triple);
-    generated->setDataLayout(targetMachine->createDataLayout());
+    module.setTargetTriple(triple);
+    module.setDataLayout(targetMachine->createDataLayout());
 
     std::error_code fileError;
     llvm::raw_fd_ostream output(path, fileError, llvm::sys::fs::OF_None);
@@ -507,7 +506,7 @@ public:
     if (targetMachine->addPassesToEmitFile(
             passes, output, nullptr, llvm::CodeGenFileType::ObjectFile))
       throw std::runtime_error("native target cannot emit object files");
-    passes.run(*generated);
+    passes.run(module);
     output.flush();
     if (output.has_error())
       throw std::runtime_error("cannot write object file '" + path + "'");
