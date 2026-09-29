@@ -743,7 +743,7 @@ class CompilerTests(unittest.TestCase):
 
     def test_duplicate_include_is_loaded_once(self):
         (self.root / "lib.faust").write_text("fn helper() -> i32 { return 1; }")
-        self.execute('include "lib.faust";\ninclude "lib.faust";\nfn main() -> i32 { return helper(); }', "")
+        self.execute('include "lib.faust";\ninclude "lib.faust";\nfn main() -> i32 { helper(); return 0; }', "")
 
     def test_include_cycle_rejected(self):
         (self.root / "a.faust").write_text('include "b.faust";\nfn a() -> i32 { return 1; }')
