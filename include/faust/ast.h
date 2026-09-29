@@ -44,7 +44,6 @@ struct Expr {
   enum Kind { Integer, Boolean, String, Variable, Call, Binary, Negate, Not,
               Compare, Logical } kind;
   Type type = Type::I32;
-  bool decayToPointer = false;
   Token token;
   int32_t value = 0;
   std::vector<std::unique_ptr<Expr>> children;
