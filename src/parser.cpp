@@ -30,9 +30,13 @@ class Parser {
           t.text[0] == '_'))
       return false;
     if (t.text == "fn" || t.text == "let" || t.text == "return" ||
-        t.text == "i32" || t.text == "bool" || t.text == "if" ||
-        t.text == "else" || t.text == "while" || t.text == "true" ||
-        t.text == "false" || t.text == "extern" || t.text == "asm")
+        t.text == "i8" || t.text == "u8" || t.text == "i16" ||
+        t.text == "u16" || t.text == "i32" || t.text == "u32" ||
+        t.text == "i64" || t.text == "u64" || t.text == "f32" ||
+        t.text == "f64" || t.text == "bool" || t.text == "void" ||
+        t.text == "if" || t.text == "else" || t.text == "while" ||
+        t.text == "true" || t.text == "false" || t.text == "extern" ||
+        t.text == "asm")
       return false;
     return true;
   }
@@ -43,12 +47,18 @@ class Parser {
     return take();
   }
   Type parseType() {
-    if (accept("i32"))
-      return Type::I32;
-    if (accept("bool"))
-      return Type::Bool;
-    if (accept("i8"))
-      return Type::I32;
+    if (accept("i8")) return Type::I8;
+    if (accept("u8")) return Type::U8;
+    if (accept("i16")) return Type::I16;
+    if (accept("u16")) return Type::U16;
+    if (accept("i32")) return Type::I32;
+    if (accept("u32")) return Type::U32;
+    if (accept("i64")) return Type::I64;
+    if (accept("u64")) return Type::U64;
+    if (accept("f32")) return Type::F32;
+    if (accept("f64")) return Type::F64;
+    if (accept("bool")) return Type::Bool;
+    if (accept("void")) return Type::Void;
     if (peek().text == "*") {
       take();
       parseType();
@@ -223,12 +233,18 @@ class Parser {
     if (accept("let")) {
       statement.kind = Statement::Let;
       statement.token = identifier();
+      if (accept(":")) {
+        statement.type = parseType();
+        statement.hasTypeAnnotation = true;
+      }
       expect("=");
       statement.expression = expression();
       expect(";");
     } else if (accept("return")) {
       statement.kind = Statement::Return;
-      statement.expression = expression();
+      if (peek().text != ";") {
+        statement.expression = expression();
+      }
       expect(";");
     } else if (accept("if")) {
       statement.kind = Statement::If;

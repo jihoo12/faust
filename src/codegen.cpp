@@ -12,6 +12,11 @@
 
 namespace faust {
 namespace {
+
+bool isFloatType(Type type) {
+  return type == Type::F32 || type == Type::F64;
+}
+
 class Generator {
   llvm::LLVMContext context;
   llvm::Module module{"faust", context};
@@ -21,13 +26,31 @@ class Generator {
   llvm::Function *currentFunction = nullptr;
 
   llvm::Type *llvmType(Type type) {
-    return type == Type::Bool ? builder.getInt1Ty() : builder.getInt32Ty();
+    switch (type) {
+    case Type::I8: return builder.getInt8Ty();
+    case Type::U8: return builder.getInt8Ty();
+    case Type::I16: return builder.getInt16Ty();
+    case Type::U16: return builder.getInt16Ty();
+    case Type::I32: return builder.getInt32Ty();
+    case Type::U32: return builder.getInt32Ty();
+    case Type::I64: return builder.getInt64Ty();
+    case Type::U64: return builder.getInt64Ty();
+    case Type::F32: return builder.getFloatTy();
+    case Type::F64: return builder.getDoubleTy();
+    case Type::Bool: return builder.getInt1Ty();
+    case Type::Void: return builder.getVoidTy();
+    }
+    return builder.getInt32Ty();
   }
 
   llvm::Value *emitExpr(const Expr &expr) {
     switch (expr.kind) {
-    case Expr::Integer:
-      return builder.getInt32(expr.value);
+    case Expr::Integer: {
+      llvm::Type *ty = llvmType(expr.type);
+      if (expr.type == Type::F32 || expr.type == Type::F64)
+        return llvm::ConstantFP::get(ty, static_cast<double>(expr.value));
+      return llvm::ConstantInt::get(ty, expr.value, true);
+    }
     case Expr::Boolean:
       return builder.getInt1(expr.value != 0);
     case Expr::String: {
@@ -118,7 +141,7 @@ class Generator {
     throw std::runtime_error("internal error: unknown expression");
   }
 
-  void emitStatement(const Statement &statement) {
+  void emitStatement(const Statement &statement, const Function &function) {
     switch (statement.kind) {
     case Statement::Let:
       locals[statement.token.text] = emitExpr(*statement.expression);
@@ -127,7 +150,18 @@ class Generator {
       emitExpr(*statement.expression);
       break;
     case Statement::Return:
-      builder.CreateRet(emitExpr(*statement.expression));
+      if (function.returnType == Type::Void)
+        builder.CreateRetVoid();
+      else {
+        auto *retVal = emitExpr(*statement.expression);
+        if (retVal->getType() != llvmType(function.returnType)) {
+          if (isFloatType(function.returnType))
+            retVal = builder.CreateSIToFP(retVal, llvmType(function.returnType));
+          else
+            retVal = builder.CreateSExt(retVal, llvmType(function.returnType));
+        }
+        builder.CreateRet(retVal);
+      }
       break;
     case Statement::Assign:
       locals[statement.token.text] = emitExpr(*statement.expression);
@@ -143,12 +177,12 @@ class Generator {
       builder.CreateCondBr(cond, thenBlock, elseBlock);
       builder.SetInsertPoint(thenBlock);
       for (const auto &s : statement.body)
-        emitStatement(s);
+        emitStatement(s, function);
       if (!builder.GetInsertBlock()->getTerminator())
         builder.CreateBr(mergeBlock);
       builder.SetInsertPoint(elseBlock);
       for (const auto &s : statement.elseBody)
-        emitStatement(s);
+        emitStatement(s, function);
       if (!builder.GetInsertBlock()->getTerminator())
         builder.CreateBr(mergeBlock);
       builder.SetInsertPoint(mergeBlock);
@@ -181,7 +215,7 @@ class Generator {
       builder.CreateCondBr(cond, bodyBlock, exitBlock);
       builder.SetInsertPoint(bodyBlock);
       for (const auto &s : statement.body)
-        emitStatement(s);
+        emitStatement(s, function);
       if (!builder.GetInsertBlock()->getTerminator())
         builder.CreateBr(loopBlock);
       for (size_t i = 0; i < modifiedVars.size(); ++i) {
@@ -244,7 +278,7 @@ public:
         locals[function.parameters[i].text] = target->getArg(i);
       }
       for (const auto &statement : function.body)
-        emitStatement(statement);
+        emitStatement(statement, function);
     }
     if (llvm::verifyModule(module, &llvm::errs()))
       throw std::runtime_error("internal error: invalid LLVM module");

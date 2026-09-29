@@ -236,11 +236,11 @@ class CompilerTests(unittest.TestCase):
 
     def test_arithmetic_on_bool_rejected(self):
         self.reject("fn main() -> i32 { let b = true + false; return 0; }",
-                    "arithmetic requires i32 operands")
+                     "arithmetic requires numeric operands")
 
     def test_comparison_on_bool_rejected(self):
         self.reject("fn main() -> i32 { let b = true < false; return 0; }",
-                    "comparison requires i32 operands")
+                     "comparison requires numeric operands")
 
     def test_logical_on_i32_rejected(self):
         self.reject("fn main() -> i32 { let b = 1 && 0; return 0; }",
@@ -384,6 +384,50 @@ class CompilerTests(unittest.TestCase):
                      [str(self.source), "-o", str(self.root / "missing" / "out.ll")]):
             with self.subTest(args=args):
                 self.assertEqual(run(COMPILER, *args).returncode, 1)
+
+    def test_i8_type(self):
+        self.execute("fn main() -> i32 { let x: i8 = 42; return 0; }", "")
+
+    def test_u8_type(self):
+        self.execute("fn main() -> i32 { let x: u8 = 255; return 0; }", "")
+
+    def test_i16_type(self):
+        self.execute("fn main() -> i32 { let x: i16 = 1000; return 0; }", "")
+
+    def test_u16_type(self):
+        self.execute("fn main() -> i32 { let x: u16 = 65535; return 0; }", "")
+
+    def test_i64_type(self):
+        self.execute("fn main() -> i32 { let x: i64 = 100000; return 0; }", "")
+
+    def test_u64_type(self):
+        self.execute("fn main() -> i32 { let x: u64 = 100000; return 0; }", "")
+
+    def test_f32_type(self):
+        self.execute("fn main() -> i32 { let x: f32 = 1; return 0; }", "")
+
+    def test_f64_type(self):
+        self.execute("fn main() -> i32 { let x: f64 = 1; return 0; }", "")
+
+    def test_void_return(self):
+        self.execute("fn helper() -> void { return; }\n"
+                      "fn main() -> i32 { helper(); return 0; }", "")
+
+    def test_void_with_value_rejected(self):
+        self.reject("fn helper() -> void { return 1; }\n"
+                     "fn main() -> i32 { return 0; }",
+                     "void function cannot return a value")
+
+    def test_i8_arithmetic(self):
+        self.execute("fn main() -> i32 { let a: i8 = 100; let b: i8 = 50; let c = a + b; return 0; }", "")
+
+    def test_i8_overflow_rejected(self):
+        self.reject("fn main() -> i32 { let x: i8 = 256; return 0; }",
+                     "outside the range of i8")
+
+    def test_type_mismatch_rejected(self):
+        self.reject("fn main() -> i32 { let x: i8 = true; return 0; }",
+                     "assignment type mismatch")
 
 
 if __name__ == "__main__":

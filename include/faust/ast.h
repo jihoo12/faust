@@ -9,7 +9,7 @@
 #include <vector>
 
 namespace faust {
-enum class Type { I32, Bool };
+enum class Type { I8, U8, I16, U16, I32, U32, I64, U64, F32, F64, Bool, Void };
 
 struct Expr {
   enum Kind { Integer, Boolean, String, Variable, Call, Binary, Negate, Not,
@@ -22,6 +22,7 @@ struct Expr {
 struct Statement {
   enum Kind { Let, Evaluate, Return, If, While, Assign, Asm } kind;
   Type type = Type::I32;
+  bool hasTypeAnnotation = false;
   Token token;
   std::unique_ptr<Expr> expression;
   std::unique_ptr<Expr> condition;
