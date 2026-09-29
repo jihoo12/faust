@@ -128,6 +128,27 @@ void checkExpr(Expr &expr, const Function &function,
     expr.type = found->second.returnType;
     break;
   }
+  case Expr::ArrayLiteral:
+    if (expr.children.empty())
+      fail(expr.token, "cannot infer type of empty array");
+    checkExpr(*expr.children[0], function, locals, signatures);
+    for (size_t i = 1; i < expr.children.size(); ++i) {
+      checkExpr(*expr.children[i], function, locals, signatures);
+      if (expr.children[i]->type != expr.children[0]->type)
+        fail(expr.children[i]->token, "array elements must have the same type");
+    }
+    expr.type = Type::array(expr.children[0]->type, expr.children.size());
+    break;
+  case Expr::Index:
+    checkExpr(*expr.children[0], function, locals, signatures);
+    checkExpr(*expr.children[1], function, locals, signatures);
+    if (expr.children[0]->type.kind != Type::Array ||
+        !expr.children[0]->type.element)
+      fail(expr.token, "indexing requires array type");
+    if (!isIntegerType(expr.children[1]->type))
+      fail(expr.children[1]->token, "array index must be an integer");
+    expr.type = *expr.children[0]->type.element;
+    break;
   case Expr::AddressOf:
     checkExpr(*expr.children[0], function, locals, signatures);
     if (expr.children[0]->kind != Expr::Variable)
@@ -271,6 +292,12 @@ void checkStatement(Statement &statement, const Function &function,
     if (!canImplicitlyConvert(*statement.expression,
                               *statement.condition->type.element))
       fail(statement.token, "pointer assignment type mismatch");
+    break;
+  case Statement::IndexStore:
+    checkExpr(*statement.condition, function, locals, signatures);
+    checkExpr(*statement.expression, function, locals, signatures);
+    if (!canImplicitlyConvert(*statement.expression, statement.condition->type))
+      fail(statement.token, "array element assignment type mismatch");
     break;
   case Statement::Asm:
     if (!function.hasAsm)
