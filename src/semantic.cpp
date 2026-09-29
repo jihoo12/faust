@@ -39,6 +39,8 @@ bool canImplicitlyConvert(const Expr &expr, const Type &target) {
       expr.type.element && target.element &&
       *expr.type.element == *target.element)
     return true;
+  if (target.kind == Type::I32 && isIntegerType(expr.type))
+    return true;
   if (expr.kind == Expr::Integer) {
     if (expr.value == 0 && target.kind == Type::Pointer)
       return true;
