@@ -272,6 +272,11 @@ class CompilerTests(unittest.TestCase):
                      "fn main() -> i32 !{asm, syscalls 1} { puts(\"hello\"); return 0; }",
                      "hello\n")
 
+    def test_string_literal_rejected_for_wrong_pointer_element_type(self):
+        self.reject("extern takes_i32_ptr(p: *i32) -> i32 !{asm, syscalls 1};\n"
+                    "fn main() -> i32 !{asm, syscalls 1} { return takes_i32_ptr(\"hello\"); }",
+                    "wrong type for argument 1")
+
     def test_string_literal_rejected_for_integer_param(self):
         self.reject("fn takes_int(x: i32) -> i32 { return x; }\n"
                     "fn main() -> i32 { return takes_int(\"hello\"); }",
