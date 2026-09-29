@@ -617,6 +617,30 @@ class CompilerTests(unittest.TestCase):
     def test_f64_type(self):
         self.execute("fn main() -> i32 { let x: f64 = 1; return 0; }", "")
 
+    def test_f32_arithmetic(self):
+        self.execute("fn calc(a: f32, b: f32) -> f32 { return a + b * a - b; }\n"
+                     "fn main() -> i32 { calc(2, 3); return 0; }", "")
+
+    def test_f64_negation(self):
+        self.execute("fn negate(x: f64) -> f64 { return -x; }\n"
+                     "fn main() -> i32 { negate(7); return 0; }", "")
+
+    def test_float_comparisons(self):
+        self.execute("fn less(a: f32, b: f32) -> bool { return a < b; }\n"
+                     "fn equal(a: f64, b: f64) -> bool { return a == b; }\n"
+                     "fn main() -> i32 { less(1, 2); equal(3, 3); return 0; }", "")
+
+    def test_float_codegen_uses_float_instructions(self):
+        result = self.compile(
+            "fn calc(a: f32, b: f32) -> bool { let x = -(a + b * a); return x <= b; }\n"
+            "fn main() -> i32 { calc(1, 2); return 0; }")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        ir = self.ir.read_text()
+        self.assertIn("fmul float", ir)
+        self.assertIn("fadd float", ir)
+        self.assertIn("fneg float", ir)
+        self.assertIn("fcmp ole float", ir)
+
     def test_void_return(self):
         self.execute("fn helper() -> void { return; }\n"
                       "fn main() -> i32 { helper(); return 0; }", "")
