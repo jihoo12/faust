@@ -757,6 +757,25 @@ class CompilerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("cannot open included file", result.stderr)
 
+    def test_object_output(self):
+        self.source.write_text("fn main() -> i32 { return 0; }")
+        obj = self.root / "test.o"
+        result = run(COMPILER, "-c", str(self.source), "-o", str(obj))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(obj.exists())
+        self.assertGreater(obj.stat().st_size, 0)
+        executable = self.root / "object-test"
+        result = run(CLANG, str(obj), "-o", str(executable))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        result = run(str(executable))
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_object_output_requires_path(self):
+        self.source.write_text("fn main() -> i32 { return 0; }")
+        result = run(COMPILER, "-c", str(self.source))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("-c requires -o", result.stderr)
+
     def test_cli_errors(self):
         self.source.write_text("fn main() -> i32 { return 0; }")
         for args in ([], ["--unknown"], [str(self.source), "-o"],
