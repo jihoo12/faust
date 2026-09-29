@@ -49,7 +49,7 @@ struct Expr {
   std::vector<std::unique_ptr<Expr>> children;
 };
 struct Statement {
-  enum Kind { Let, Evaluate, Return, If, While, Assign, Store, IndexStore, Asm } kind;
+  enum Kind { Let, Evaluate, Return, If, While, Assign, Asm } kind;
   Type type = Type::I32;
   bool hasTypeAnnotation = false;
   Token token;
