@@ -96,6 +96,23 @@ class Generator {
         {builder.getInt64(0), builder.getInt64(0)});
   }
 
+  llvm::Value *emitConverted(const Expr &expr, llvm::Type *targetType) {
+    if (expr.type.kind == Type::Array && targetType->isPointerTy())
+      return emitArrayDecay(expr);
+    if (expr.kind == Expr::Integer && expr.value == 0 &&
+        targetType->isPointerTy())
+      return llvm::ConstantPointerNull::get(
+          llvm::cast<llvm::PointerType>(targetType));
+    auto *value = emitExpr(expr);
+    if (value->getType() == targetType)
+      return value;
+    if (value->getType()->isIntegerTy() && targetType->isIntegerTy())
+      return builder.CreateIntCast(value, targetType, true);
+    if (value->getType()->isIntegerTy() && targetType->isFloatingPointTy())
+      return builder.CreateSIToFP(value, targetType);
+    return value;
+  }
+
   llvm::Value *emitExpr(const Expr &expr) {
     switch (expr.kind) {
     case Expr::Integer: {
@@ -190,9 +207,9 @@ class Generator {
       auto *callee = functions.at(expr.token.text);
       for (size_t i = 0; i < expr.children.size(); ++i) {
         const auto &child = *expr.children[i];
-        if (i < callee->arg_size() && child.type.kind == Type::Array &&
-            callee->getFunctionType()->getParamType(i)->isPointerTy())
-          arguments.push_back(emitArrayDecay(child));
+        if (i < callee->arg_size())
+          arguments.push_back(emitConverted(
+              child, callee->getFunctionType()->getParamType(i)));
         else
           arguments.push_back(emitExpr(child));
       }
@@ -205,10 +222,10 @@ class Generator {
   void emitStatement(const Statement &statement, const Function &function) {
     switch (statement.kind) {
     case Statement::Let: {
-      auto *value = emitExpr(*statement.expression);
       auto *slot = builder.CreateAlloca(llvmType(statement.type), nullptr,
                                         statement.token.text);
-      builder.CreateStore(convertValue(value, statement.type), slot);
+      builder.CreateStore(
+          emitConverted(*statement.expression, llvmType(statement.type)), slot);
       locals[statement.token.text] = slot;
       break;
     }
@@ -218,20 +235,13 @@ class Generator {
     case Statement::Return:
       if (function.returnType == Type::Void)
         builder.CreateRetVoid();
-      else {
-        auto *retVal = emitExpr(*statement.expression);
-        if (retVal->getType() != llvmType(function.returnType)) {
-          if (isFloatType(function.returnType))
-            retVal = builder.CreateSIToFP(retVal, llvmType(function.returnType));
-          else
-            retVal = builder.CreateSExt(retVal, llvmType(function.returnType));
-        }
-        builder.CreateRet(retVal);
-      }
+      else
+        builder.CreateRet(emitConverted(*statement.expression,
+                                        llvmType(function.returnType)));
       break;
     case Statement::Assign:
       builder.CreateStore(
-          convertValue(emitExpr(*statement.expression), statement.condition->type),
+          emitConverted(*statement.expression, llvmType(statement.condition->type)),
           emitAddress(*statement.condition));
       break;
     case Statement::If: {
