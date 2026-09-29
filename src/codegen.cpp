@@ -100,7 +100,7 @@ class Generator {
 
         if (thenReturns && elseReturns)
           return true;
-        function->insert(function->end(), mergeBlock);
+        mergeBlock->insertInto(function);
         builder.SetInsertPoint(mergeBlock);
         continue;
       }
