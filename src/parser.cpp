@@ -178,7 +178,11 @@ class Parser {
         } while (accept(","));
         expect(")");
       }
-    } else if (accept("{")) {
+    } else if (peek().text == "{" &&
+               ((pos + 1 < tokens.size() && tokens[pos + 1].text == "}") ||
+                (pos + 2 < tokens.size() && isIdentifier(tokens[pos + 1]) &&
+                 tokens[pos + 2].text == ":"))) {
+      take();
       result->kind = Expr::StructLiteral;
       if (!accept("}")) {
         do {
