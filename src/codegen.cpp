@@ -75,6 +75,47 @@ class Generator {
     throw std::runtime_error("internal error: unknown expression");
   }
 
+  bool emitBlock(const std::vector<Statement> &statements) {
+    for (const auto &statement : statements) {
+      if (statement.kind == Statement::If) {
+        auto *condition = emit(*statement.expression);
+        auto *function = builder.GetInsertBlock()->getParent();
+        auto *thenBlock = llvm::BasicBlock::Create(context, "if.then", function);
+        auto *elseBlock = llvm::BasicBlock::Create(context, "if.else", function);
+        auto *mergeBlock = llvm::BasicBlock::Create(context, "if.end");
+        builder.CreateCondBr(condition, thenBlock, elseBlock);
+
+        auto savedLocals = locals;
+        builder.SetInsertPoint(thenBlock);
+        bool thenReturns = emitBlock(statement.thenBranch);
+        if (!thenReturns)
+          builder.CreateBr(mergeBlock);
+
+        locals = savedLocals;
+        builder.SetInsertPoint(elseBlock);
+        bool elseReturns = emitBlock(statement.elseBranch);
+        if (!elseReturns)
+          builder.CreateBr(mergeBlock);
+        locals = savedLocals;
+
+        if (thenReturns && elseReturns)
+          return true;
+        function->insert(function->end(), mergeBlock);
+        builder.SetInsertPoint(mergeBlock);
+        continue;
+      }
+
+      auto *value = emit(*statement.expression);
+      if (statement.kind == Statement::Let)
+        locals[statement.token.text] = value;
+      if (statement.kind == Statement::Return) {
+        builder.CreateRet(value);
+        return true;
+      }
+    }
+    return false;
+  }
+
 public:
   std::string generate(const std::vector<Function> &program) {
     for (const auto &function : program) {
@@ -99,13 +140,7 @@ public:
         target->getArg(i)->setName(function.parameters[i].name.text);
         locals[function.parameters[i].name.text] = target->getArg(i);
       }
-      for (const auto &statement : function.body) {
-        auto *value = emit(*statement.expression);
-        if (statement.kind == Statement::Let)
-          locals[statement.token.text] = value;
-        if (statement.kind == Statement::Return)
-          builder.CreateRet(value);
-      }
+      emitBlock(function.body);
     }
     if (llvm::verifyModule(module, &llvm::errs()))
       throw std::runtime_error("internal error: invalid LLVM module");
