@@ -125,7 +125,7 @@ class CompilerTests(unittest.TestCase):
             ("fn main() -> i32 { return 0; } fn main() -> i32 { return 1; }", "duplicate or reserved"),
             ("fn main() -> i32 !{syscalls 1000} { return 0; }", "syscall number too large"),
             ("fn main() -> i32 !{syscalls 1,1} { return 0; }", "duplicate syscall 1"),
-            ("fn main() -> i32 !{unknown} { return 0; }", "expected 'syscalls' or 'asm'"),
+            ("fn main() -> i32 !{unknown} { return 0; }", "expected 'syscalls', 'asm', or 'extern'"),
             ("fn main() -> i32 { asm { \"nop\" } return 0; }", "requires asm"),
             ("fn main() -> i32 { return 2147483648; }", "outside the i32 range"),
             ("fn main() -> i32 { return 999999999999999999999999999; }", "outside the i32 range"),
@@ -444,13 +444,13 @@ class CompilerTests(unittest.TestCase):
 
     def test_extern_i64_return_type_in_ir(self):
         result = self.compile("extern wide() -> i64;\n"
-                              "fn main() -> i32 { wide(); return 0; }")
+                              "fn main() -> i32 !{extern} { wide(); return 0; }")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("declare i64 @wide()", self.ir.read_text())
 
     def test_extern_pointer_return_type_in_ir(self):
         result = self.compile("extern data() -> *i8;\n"
-                              "fn main() -> i32 { data(); return 0; }")
+                              "fn main() -> i32 !{extern} { data(); return 0; }")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("declare ptr @data()", self.ir.read_text())
 
@@ -472,7 +472,7 @@ class CompilerTests(unittest.TestCase):
     def test_variadic_small_integer_promotions_in_ir(self):
         result = self.compile(
             "extern sink(tag: i32, ...) -> i32;\n"
-            "fn main() -> i32 { let a: i8 = 1; let b: u8 = 2; sink(0, a, b); return 0; }")
+            "fn main() -> i32 !{extern} { let a: i8 = 1; let b: u8 = 2; sink(0, a, b); return 0; }")
         self.assertEqual(result.returncode, 0, result.stderr)
         ir = self.ir.read_text()
         self.assertIn("sext i8", ir)
@@ -481,7 +481,7 @@ class CompilerTests(unittest.TestCase):
     def test_variadic_f32_promotes_to_f64_in_ir(self):
         result = self.compile(
             "extern sink(tag: i32, ...) -> i32;\n"
-            "fn main() -> i32 { let x: f32 = 1; sink(0, x); return 0; }")
+            "fn main() -> i32 !{extern} { let x: f32 = 1; sink(0, x); return 0; }")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("fpext float", self.ir.read_text())
 
