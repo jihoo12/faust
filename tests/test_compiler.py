@@ -729,6 +729,34 @@ class CompilerTests(unittest.TestCase):
                      "fn main() -> i32 !{extern, asm, syscalls 0} { return helper(); }",
                      "requires syscall 1")
 
+    def test_include_relative_file(self):
+        lib = self.root / "lib.faust"
+        lib.write_text("fn answer() -> i32 { return 42; }")
+        self.execute('include "lib.faust";\nfn main() -> i32 { return answer(); }', "")
+
+    def test_nested_include(self):
+        sub = self.root / "sub"
+        sub.mkdir()
+        (sub / "value.faust").write_text("fn value() -> i32 { return 7; }")
+        (sub / "lib.faust").write_text('include "value.faust";\nfn answer() -> i32 { return value(); }')
+        self.execute('include "sub/lib.faust";\nfn main() -> i32 { return answer(); }', "")
+
+    def test_duplicate_include_is_loaded_once(self):
+        (self.root / "lib.faust").write_text("fn helper() -> i32 { return 1; }")
+        self.execute('include "lib.faust";\ninclude "lib.faust";\nfn main() -> i32 { return helper(); }', "")
+
+    def test_include_cycle_rejected(self):
+        (self.root / "a.faust").write_text('include "b.faust";\nfn a() -> i32 { return 1; }')
+        (self.root / "b.faust").write_text('include "a.faust";\nfn b() -> i32 { return 2; }')
+        result = self.compile('include "a.faust";\nfn main() -> i32 { return 0; }')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("cyclic include", result.stderr)
+
+    def test_missing_include_rejected(self):
+        result = self.compile('include "missing.faust";\nfn main() -> i32 { return 0; }')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("cannot open included file", result.stderr)
+
     def test_cli_errors(self):
         self.source.write_text("fn main() -> i32 { return 0; }")
         for args in ([], ["--unknown"], [str(self.source), "-o"],
