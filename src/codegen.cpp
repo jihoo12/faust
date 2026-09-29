@@ -7,8 +7,16 @@
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Verifier.h>
+#include <llvm/MC/TargetRegistry.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/Target/TargetOptions.h>
+#include <llvm/IR/LegacyPassManager.h>
 
 #include <map>
+#include <memory>
 #include <stdexcept>
 
 namespace faust {
@@ -405,7 +413,7 @@ class Generator {
   }
 
 public:
-  std::string generate(const Program &program) {
+  std::unique_ptr<llvm::Module> generateModule(const Program &program) {
     for (const auto &decl : program.structs) {
       structTypes[decl.name.text] =
           llvm::StructType::create(context, "faust." + decl.name.text);
@@ -460,13 +468,59 @@ public:
     }
     if (llvm::verifyModule(module, &llvm::errs()))
       throw std::runtime_error("internal error: invalid LLVM module");
-    return printIR(module);
+    return std::make_unique<llvm::Module>(std::move(module));
+  }
+
+  std::string generate(const Program &program) {
+    auto generated = generateModule(program);
+    return printIR(*generated);
+  }
+
+  void generateObject(const Program &program, const std::string &path) {
+    auto generated = generateModule(program);
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmPrinter();
+
+    const std::string triple = llvm::sys::getDefaultTargetTriple();
+    std::string error;
+    const llvm::Target *target = llvm::TargetRegistry::lookupTarget(triple, error);
+    if (!target)
+      throw std::runtime_error("cannot initialize native target: " + error);
+
+    llvm::TargetOptions options;
+    std::unique_ptr<llvm::TargetMachine> targetMachine(
+        target->createTargetMachine(triple, "generic", "", options,
+                                    llvm::Reloc::PIC_));
+    if (!targetMachine)
+      throw std::runtime_error("cannot create native target machine");
+
+    generated->setTargetTriple(triple);
+    generated->setDataLayout(targetMachine->createDataLayout());
+
+    std::error_code fileError;
+    llvm::raw_fd_ostream output(path, fileError, llvm::sys::fs::OF_None);
+    if (fileError)
+      throw std::runtime_error("cannot write object file '" + path + "': " +
+                               fileError.message());
+
+    llvm::legacy::PassManager passes;
+    if (targetMachine->addPassesToEmitFile(
+            passes, output, nullptr, llvm::CodeGenFileType::ObjectFile))
+      throw std::runtime_error("native target cannot emit object files");
+    passes.run(*generated);
+    output.flush();
+    if (output.has_error())
+      throw std::runtime_error("cannot write object file '" + path + "'");
   }
 };
 } // namespace
 
 std::string generateIR(const Program &program) {
   return Generator().generate(program);
+}
+
+void generateObject(const Program &program, const std::string &path) {
+  Generator().generateObject(program, path);
 }
 
 } // namespace faust
