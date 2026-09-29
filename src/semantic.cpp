@@ -32,7 +32,7 @@ bool isFloatType(Type type) {
 }
 
 bool fitsInRange(int64_t value, Type type) {
-  switch (type) {
+  switch (type.kind) {
   case Type::I8: return value >= -128 && value <= 127;
   case Type::U8: return value >= 0 && value <= 255;
   case Type::I16: return value >= -32768 && value <= 32767;
