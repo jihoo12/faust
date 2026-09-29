@@ -346,39 +346,17 @@ class Parser {
         }
       }
       expect("}");
-    } else if (peek().text == "*") {
-      statement.kind = Statement::Store;
-      statement.token = take();
-      statement.condition = primary();
-      expect("=");
-      statement.expression = expression();
-      expect(";");
     } else {
-      Token ident = peek();
-      if (isIdentifier(ident) && pos + 1 < tokens.size() &&
-          tokens[pos + 1].text == "[") {
-        auto target = primary();
-        if (target->kind == Expr::Index && accept("=")) {
-          statement.kind = Statement::IndexStore;
-          statement.token = ident;
-          statement.condition = std::move(target);
-          statement.expression = expression();
-          expect(";");
-        } else {
-          statement.kind = Statement::Evaluate;
-          statement.expression = std::move(target);
-          expect(";");
-        }
-      } else if (isIdentifier(ident) && pos + 1 < tokens.size() &&
-          tokens[pos + 1].text == "=") {
+      auto target = expression();
+      if (accept("=")) {
         statement.kind = Statement::Assign;
-        statement.token = take();
-        take();
+        statement.token = target->token;
+        statement.condition = std::move(target);
         statement.expression = expression();
         expect(";");
       } else {
         statement.kind = Statement::Evaluate;
-        statement.expression = expression();
+        statement.expression = std::move(target);
         expect(";");
       }
     }

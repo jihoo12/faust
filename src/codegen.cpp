@@ -58,12 +58,31 @@ class Generator {
     return value;
   }
 
-  llvm::Value *emitArrayAddress(const Expr &expr) {
-    if (expr.kind == Expr::Variable)
+  llvm::Value *emitAddress(const Expr &expr) {
+    switch (expr.kind) {
+    case Expr::Variable:
       return locals.at(expr.token.text);
+    case Expr::Dereference:
+      return emitExpr(*expr.children[0]);
+    case Expr::Index: {
+      const Expr &base = *expr.children[0];
+      auto *baseAddress = emitAddress(base);
+      auto *index = emitExpr(*expr.children[1]);
+      if (!index->getType()->isIntegerTy(64))
+        index = builder.CreateIntCast(index, builder.getInt64Ty(), true);
+      return builder.CreateInBoundsGEP(
+          llvmType(base.type), baseAddress,
+          {builder.getInt64(0), index});
+    }
+    default:
+      throw std::runtime_error("internal error: expression is not addressable");
+    }
+  }
+
+  llvm::Value *emitArrayAddress(const Expr &expr) {
     if (expr.kind == Expr::String)
       return builder.CreateGlobalString(decodeStringLiteral(expr.token));
-    throw std::runtime_error("internal error: array expression is not addressable");
+    return emitAddress(expr);
   }
 
   llvm::Value *emitArrayDecay(const Expr &expr) {
@@ -73,18 +92,6 @@ class Generator {
     return builder.CreateInBoundsGEP(
         llvmType(expr.type), address,
         {builder.getInt64(0), builder.getInt64(0)});
-  }
-
-  llvm::Value *emitIndexAddress(const Expr &expr) {
-    const Expr &base = *expr.children[0];
-    llvm::Value *arrayAddress = nullptr;
-    arrayAddress = emitArrayAddress(base);
-    auto *index = emitExpr(*expr.children[1]);
-    if (!index->getType()->isIntegerTy(64))
-      index = builder.CreateIntCast(index, builder.getInt64Ty(), true);
-    return builder.CreateInBoundsGEP(
-        llvmType(base.type), arrayAddress,
-        {builder.getInt64(0), index});
   }
 
   llvm::Value *emitExpr(const Expr &expr) {
@@ -113,9 +120,9 @@ class Generator {
       return value;
     }
     case Expr::Index:
-      return builder.CreateLoad(llvmType(expr.type), emitIndexAddress(expr));
+      return builder.CreateLoad(llvmType(expr.type), emitAddress(expr));
     case Expr::AddressOf:
-      return locals.at(expr.children[0]->token.text);
+      return emitAddress(*expr.children[0]);
     case Expr::Dereference: {
       auto *pointer = emitExpr(*expr.children[0]);
       return builder.CreateLoad(llvmType(expr.type), pointer);
@@ -220,23 +227,10 @@ class Generator {
         builder.CreateRet(retVal);
       }
       break;
-    case Statement::Assign: {
-      auto *slot = locals.at(statement.token.text);
-      builder.CreateStore(convertValue(emitExpr(*statement.expression),
-                                       statement.type),
-                          slot);
-      break;
-    }
-    case Statement::Store:
-      builder.CreateStore(
-          convertValue(emitExpr(*statement.expression),
-                       *statement.condition->type.element),
-          emitExpr(*statement.condition));
-      break;
-    case Statement::IndexStore:
+    case Statement::Assign:
       builder.CreateStore(
           convertValue(emitExpr(*statement.expression), statement.condition->type),
-          emitIndexAddress(*statement.condition));
+          emitAddress(*statement.condition));
       break;
     case Statement::If: {
       auto *cond = emitExpr(*statement.condition);
