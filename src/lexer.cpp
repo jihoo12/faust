@@ -78,7 +78,7 @@ std::vector<Token> lex(const std::string &source) {
       advance();
       advance();
       advance();
-    } else if (std::string("(){}[]:,;=!+-*<>&").find(ch) != std::string::npos) {
+    } else if (std::string("(){}[]:,;.=!+-*<>&").find(ch) != std::string::npos) {
       advance();
     } else {
       fail(token, "unexpected character");
