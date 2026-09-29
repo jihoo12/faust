@@ -307,6 +307,61 @@ class CompilerTests(unittest.TestCase):
         self.execute("fn add(a: i32, b: i32) -> i32 { return a + b; }\n"
                      "fn main() -> i32 { let x = add(20, 22); return 0; }", "")
 
+    def test_syscall_not_in_contract_rejected(self):
+        self.reject("fn helper() -> i32 !{asm, syscalls 1} { return 0; }\n"
+                     "fn main() -> i32 !{asm} { return helper(); }",
+                     "requires syscall 1")
+
+    def test_syscall_transitive_through_multiple_levels(self):
+        self.reject("fn a() -> i32 !{asm, syscalls 1} { return 0; }\n"
+                     "fn b() -> i32 { return a(); }\n"
+                     "fn c() -> i32 { return b(); }\n"
+                     "fn main() -> i32 !{asm, syscalls 1} { return c(); }",
+                     "requires syscall 1 in contract of 'b'")
+
+    def test_syscall_partial_contract_rejected(self):
+        self.reject("extern read(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 0};\n"
+                     "extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};\n"
+                     "fn main() -> i32 !{asm, syscalls 0} {\n"
+                     "read(0, 0, 0); write(1, 0, 0); return 0; }",
+                     "requires syscall 1")
+
+    def test_syscall_in_contract_but_not_used(self):
+        self.execute("extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};\n"
+                      "fn main() -> i32 !{asm, syscalls 0,1} { return 0; }", "")
+
+    def test_syscall_through_if_branch(self):
+        self.reject("fn helper() -> i32 !{asm, syscalls 1} { return 0; }\n"
+                     "fn main() -> i32 !{asm} {\n"
+                     "if true { helper(); }\n"
+                     "return 0; }",
+                     "requires syscall 1")
+
+    def test_syscall_through_while_loop(self):
+        self.reject("fn helper() -> i32 !{asm, syscalls 1} { return 0; }\n"
+                     "fn main() -> i32 !{asm} {\n"
+                     "while false { helper(); }\n"
+                     "return 0; }",
+                     "requires syscall 1")
+
+    def test_syscall_zero_required(self):
+        self.reject("extern read(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 0};\n"
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "return read(0, 0, 0); }",
+                     "requires syscall 0")
+
+    def test_syscall_without_asm_rejected(self):
+        self.reject("fn main() -> i32 !{syscalls 1} { return 0; }",
+                     "function declares syscalls but missing asm effect")
+
+    def test_syscall_multiple_all_required(self):
+        self.reject("extern read(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 0};\n"
+                     "extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};\n"
+                     "fn helper() -> i32 !{asm, syscalls 0,1} {\n"
+                     "read(0, 0, 0); write(1, 0, 0); return 0; }\n"
+                     "fn main() -> i32 !{asm, syscalls 0} { return helper(); }",
+                     "requires syscall 1")
+
     def test_cli_errors(self):
         self.source.write_text("fn main() -> i32 { return 0; }")
         for args in ([], ["--unknown"], [str(self.source), "-o"],
