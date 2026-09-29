@@ -299,6 +299,58 @@ class CompilerTests(unittest.TestCase):
         body = ir.split("define internal i32 @faust.value", 1)[1].split("}", 1)[0]
         self.assertIn("alloca i32", body)
 
+    def test_struct_literal_and_field_read(self):
+        self.execute(
+            "struct Point { x: i32, y: i32 }\n"
+            "fn main() -> i32 { let p = Point { x: 20, y: 22 }; return p.x + p.y - 42; }",
+            "")
+
+    def test_struct_fields_may_be_initialized_by_name(self):
+        self.execute(
+            "struct Point { x: i32, y: i32 }\n"
+            "fn main() -> i32 { let p = Point { y: 22, x: 20 }; return p.x + p.y - 42; }",
+            "")
+
+    def test_struct_field_assignment(self):
+        self.execute(
+            "struct Point { x: i32, y: i32 }\n"
+            "fn main() -> i32 { let p = Point { x: 20, y: 22 }; p.x = 21; return p.x - 21; }",
+            "")
+
+    def test_address_of_struct_field(self):
+        self.execute(
+            "struct Point { x: i32, y: i32 }\n"
+            "fn main() -> i32 { let p = Point { x: 41, y: 0 }; let q: *i32 = &p.x; *q = 42; return p.x - 42; }",
+            "")
+
+    def test_struct_pass_and_return_by_value(self):
+        self.execute(
+            "struct Point { x: i32, y: i32 }\n"
+            "fn swap(p: Point) -> Point { return Point { x: p.y, y: p.x }; }\n"
+            "fn main() -> i32 { let p = swap(Point { x: 20, y: 22 }); return p.x - 22; }",
+            "")
+
+    def test_struct_unknown_field_rejected(self):
+        self.reject(
+            "struct Point { x: i32 }\n"
+            "fn main() -> i32 { let p = Point { z: 1 }; return 0; }",
+            "unknown field 'z'")
+
+    def test_struct_missing_field_rejected(self):
+        self.reject(
+            "struct Point { x: i32, y: i32 }\n"
+            "fn main() -> i32 { let p = Point { x: 1 }; return 0; }",
+            "wrong number of fields")
+
+    def test_immutable_struct_stays_in_ssa(self):
+        result = self.compile(
+            "struct Point { x: i32, y: i32 }\n"
+            "fn value(p: Point) -> i32 { return p.x + p.y; }\n"
+            "fn main() -> i32 { return 0; }")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        body = self.ir.read_text().split("define internal i32 @faust.value", 1)[1].split("}", 1)[0]
+        self.assertNotIn("alloca", body)
+
     def test_address_of_and_dereference(self):
         self.execute(PRINT_WRAPPER +
                      "fn main() -> i32 !{extern, asm, syscalls 1} {\n"
