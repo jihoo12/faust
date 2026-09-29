@@ -14,7 +14,7 @@ namespace faust {
 namespace {
 
 bool isFloatType(Type type) {
-  return type == Type::F32 || type == Type::F64;
+  return type.kind == Type::F32 || type.kind == Type::F64;
 }
 
 class Generator {
@@ -26,7 +26,7 @@ class Generator {
   llvm::Function *currentFunction = nullptr;
 
   llvm::Type *llvmType(Type type) {
-    switch (type) {
+    switch (type.kind) {
     case Type::I8: return builder.getInt8Ty();
     case Type::U8: return builder.getInt8Ty();
     case Type::I16: return builder.getInt16Ty();
@@ -39,6 +39,8 @@ class Generator {
     case Type::F64: return builder.getDoubleTy();
     case Type::Bool: return builder.getInt1Ty();
     case Type::Pointer: return builder.getPtrTy();
+    case Type::Array:
+      return llvm::ArrayType::get(llvmType(*type.element), type.length);
     case Type::Void: return builder.getVoidTy();
     }
     return builder.getInt32Ty();
@@ -48,7 +50,7 @@ class Generator {
     switch (expr.kind) {
     case Expr::Integer: {
       llvm::Type *ty = llvmType(expr.type);
-      if (expr.type == Type::F32 || expr.type == Type::F64)
+      if (expr.type.kind == Type::F32 || expr.type.kind == Type::F64)
         return llvm::ConstantFP::get(ty, static_cast<double>(expr.value));
       return llvm::ConstantInt::get(ty, expr.value, true);
     }
