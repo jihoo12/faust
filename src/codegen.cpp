@@ -18,6 +18,11 @@ bool isFloatType(Type type) {
   return type.kind == Type::F32 || type.kind == Type::F64;
 }
 
+bool isUnsignedIntegerType(Type type) {
+  return type.kind == Type::U8 || type.kind == Type::U16 ||
+         type.kind == Type::U32 || type.kind == Type::U64;
+}
+
 class Generator {
   llvm::LLVMContext context;
   llvm::Module module{"faust", context};
@@ -47,14 +52,18 @@ class Generator {
     return builder.getInt32Ty();
   }
 
-  llvm::Value *convertValue(llvm::Value *value, Type target) {
+  llvm::Value *convertValue(llvm::Value *value, Type source, Type target) {
     auto *targetType = llvmType(target);
     if (value->getType() == targetType)
       return value;
     if (value->getType()->isIntegerTy() && targetType->isIntegerTy())
-      return builder.CreateIntCast(value, targetType, true);
-    if (value->getType()->isIntegerTy() && targetType->isFloatingPointTy())
+      return builder.CreateIntCast(value, targetType,
+                                   !isUnsignedIntegerType(source));
+    if (value->getType()->isIntegerTy() && targetType->isFloatingPointTy()) {
+      if (isUnsignedIntegerType(source))
+        return builder.CreateUIToFP(value, targetType);
       return builder.CreateSIToFP(value, targetType);
+    }
     return value;
   }
 
@@ -139,7 +148,8 @@ class Generator {
       llvm::Value *value = llvm::UndefValue::get(arrayType);
       for (size_t i = 0; i < expr.children.size(); ++i)
         value = builder.CreateInsertValue(
-            value, convertValue(emitExpr(*expr.children[i]), *expr.type.element),
+            value, convertValue(emitExpr(*expr.children[i]), expr.children[i]->type,
+                                *expr.type.element),
             {static_cast<unsigned>(i)});
       return value;
     }
@@ -192,14 +202,19 @@ class Generator {
           return builder.CreateFCmpOEQ(left, right);
         return builder.CreateFCmpUNE(left, right);
       }
+      bool isUnsigned = isUnsignedIntegerType(expr.children[0]->type);
       if (expr.token.text == "<")
-        return builder.CreateICmpSLT(left, right);
+        return isUnsigned ? builder.CreateICmpULT(left, right)
+                          : builder.CreateICmpSLT(left, right);
       if (expr.token.text == ">")
-        return builder.CreateICmpSGT(left, right);
+        return isUnsigned ? builder.CreateICmpUGT(left, right)
+                          : builder.CreateICmpSGT(left, right);
       if (expr.token.text == "<=")
-        return builder.CreateICmpSLE(left, right);
+        return isUnsigned ? builder.CreateICmpULE(left, right)
+                          : builder.CreateICmpSLE(left, right);
       if (expr.token.text == ">=")
-        return builder.CreateICmpSGE(left, right);
+        return isUnsigned ? builder.CreateICmpUGE(left, right)
+                          : builder.CreateICmpSGE(left, right);
       if (expr.token.text == "==")
         return builder.CreateICmpEQ(left, right);
       return builder.CreateICmpNE(left, right);
