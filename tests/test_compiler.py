@@ -338,6 +338,22 @@ class CompilerTests(unittest.TestCase):
                     "fn main() -> i32 { let xs = [1, 2]; first(xs); return 0; }",
                     "wrong type for argument 1")
 
+    def test_address_of_array_element(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "let xs = [10, 20, 30]; let p: *i32 = &xs[1]; print(*p); return 0; }",
+                     "20\n")
+
+    def test_address_of_dereference(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "let x = 7; let p: *i32 = &x; let q: *i32 = &*p; *q = 9; print(x); return 0; }",
+                     "9\n")
+
+    def test_non_lvalue_assignment_rejected(self):
+        self.reject("fn main() -> i32 { (1 + 2) = 3; return 0; }",
+                    "left side of assignment is not assignable")
+
     def test_extern_declaration(self):
         self.execute("extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};\n"
                      "fn main() -> i32 !{asm, syscalls 1} {\n"
