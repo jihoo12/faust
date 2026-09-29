@@ -39,7 +39,8 @@ bool canImplicitlyConvert(const Expr &expr, const Type &target) {
   if (expr.type.kind == Type::Array && target.kind == Type::Pointer &&
       expr.type.element && target.element &&
       *expr.type.element == *target.element &&
-      (isAssignable(expr) || expr.kind == Expr::String))
+      (expr.kind == Expr::Variable || expr.kind == Expr::Dereference ||
+       expr.kind == Expr::Index || expr.kind == Expr::String))
     return true;
   if (target.kind == Type::I32 && isIntegerType(expr.type))
     return true;
