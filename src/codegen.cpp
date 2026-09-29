@@ -173,12 +173,13 @@ class Generator {
         builder.CreateRet(retVal);
       }
       break;
-    case Statement::Assign:
+    case Statement::Assign: {
       auto *slot = locals.at(statement.token.text);
       builder.CreateStore(convertValue(emitExpr(*statement.expression),
                                        statement.type),
                           slot);
       break;
+    }
     case Statement::Store:
       builder.CreateStore(
           convertValue(emitExpr(*statement.expression),
