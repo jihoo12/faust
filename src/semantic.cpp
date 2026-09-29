@@ -8,7 +8,6 @@ namespace faust {
 namespace {
 struct Signature {
   std::vector<Type> paramTypes;
-  std::vector<bool> paramIsPointer;
   Type returnType;
   std::set<int> syscalls;
   bool hasAsm;
@@ -59,6 +58,7 @@ const char *typeName(Type type) {
   case Type::F32: return "f32";
   case Type::F64: return "f64";
   case Type::Bool: return "bool";
+  case Type::Pointer: return "pointer";
   case Type::Void: return "void";
   }
   return "unknown";
@@ -75,7 +75,7 @@ void checkExpr(Expr &expr, const Function &function,
     expr.type = Type::Bool;
     break;
   case Expr::String:
-    expr.type = Type::I32;
+    expr.type = Type::Pointer;
     break;
   case Expr::Variable: {
     auto found = locals.find(expr.token.text);
@@ -104,12 +104,10 @@ void checkExpr(Expr &expr, const Function &function,
     for (size_t i = 0; i < found->second.paramTypes.size(); ++i) {
       checkExpr(*expr.children[i], function, locals, signatures);
       if (expr.children[i]->type != found->second.paramTypes[i]) {
-        bool isNullPointer = found->second.paramIsPointer[i] &&
+        bool isNullPointer = found->second.paramTypes[i] == Type::Pointer &&
                              expr.children[i]->kind == Expr::Integer &&
                              expr.children[i]->value == 0;
-        bool isStringAsPointer = found->second.paramIsPointer[i] &&
-                                 expr.children[i]->kind == Expr::String;
-        if (!isNullPointer && !isStringAsPointer)
+        if (!isNullPointer)
           fail(expr.children[i]->token,
                "wrong type for argument " + std::to_string(i + 1) + " to '" +
                    expr.token.text + "'");
@@ -256,8 +254,7 @@ void check(Program &functions) {
   for (const auto &function : functions) {
     if (!signatures
              .emplace(function.name.text,
-                      Signature{function.paramTypes, function.paramIsPointer,
-                                function.returnType, function.syscalls,
+                      Signature{function.paramTypes, function.returnType, function.syscalls,
                                 function.hasAsm, function.isVariadic})
              .second)
       fail(function.name,
