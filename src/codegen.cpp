@@ -38,6 +38,7 @@ class Generator {
     case Type::F32: return builder.getFloatTy();
     case Type::F64: return builder.getDoubleTy();
     case Type::Bool: return builder.getInt1Ty();
+    case Type::Pointer: return builder.getPtrTy();
     case Type::Void: return builder.getVoidTy();
     }
     return builder.getInt32Ty();
@@ -248,9 +249,8 @@ public:
   std::string generate(const std::vector<Function> &program) {
     for (const auto &function : program) {
       std::vector<llvm::Type *> parameters;
-      for (size_t i = 0; i < function.paramTypes.size(); ++i)
-        parameters.push_back(function.paramIsPointer[i] ? builder.getPtrTy()
-                                                        : llvmType(function.paramTypes[i]));
+      for (Type type : function.paramTypes)
+        parameters.push_back(llvmType(type));
       auto *type = llvm::FunctionType::get(
           function.isExtern ? builder.getInt32Ty()
                              : llvmType(function.returnType),
