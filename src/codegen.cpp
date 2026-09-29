@@ -23,7 +23,7 @@ class Generator {
   llvm::Module module{"faust", context};
   llvm::IRBuilder<> builder{context};
   std::map<std::string, llvm::Function *> functions;
-  std::map<std::string, llvm::Value *> locals;
+  std::map<std::string, llvm::AllocaInst *> locals;
   llvm::Function *currentFunction = nullptr;
 
   llvm::Type *llvmType(Type type) {
@@ -47,6 +47,17 @@ class Generator {
     return builder.getInt32Ty();
   }
 
+  llvm::Value *convertValue(llvm::Value *value, Type target) {
+    auto *targetType = llvmType(target);
+    if (value->getType() == targetType)
+      return value;
+    if (value->getType()->isIntegerTy() && targetType->isIntegerTy())
+      return builder.CreateIntCast(value, targetType, true);
+    if (value->getType()->isIntegerTy() && targetType->isFloatingPointTy())
+      return builder.CreateSIToFP(value, targetType);
+    return value;
+  }
+
   llvm::Value *emitExpr(const Expr &expr) {
     switch (expr.kind) {
     case Expr::Integer: {
@@ -59,8 +70,16 @@ class Generator {
       return builder.getInt1(expr.value != 0);
     case Expr::String:
       return builder.CreateGlobalString(decodeStringLiteral(expr.token));
-    case Expr::Variable:
-      return locals.at(expr.token.text);
+    case Expr::Variable: {
+      auto *slot = locals.at(expr.token.text);
+      return builder.CreateLoad(slot->getAllocatedType(), slot, expr.token.text);
+    }
+    case Expr::AddressOf:
+      return locals.at(expr.children[0]->token.text);
+    case Expr::Dereference: {
+      auto *pointer = emitExpr(*expr.children[0]);
+      return builder.CreateLoad(llvmType(expr.type), pointer);
+    }
     case Expr::Negate:
       return builder.CreateNeg(emitExpr(*expr.children[0]));
     case Expr::Not:
@@ -129,9 +148,14 @@ class Generator {
 
   void emitStatement(const Statement &statement, const Function &function) {
     switch (statement.kind) {
-    case Statement::Let:
-      locals[statement.token.text] = emitExpr(*statement.expression);
+    case Statement::Let: {
+      auto *value = emitExpr(*statement.expression);
+      auto *slot = builder.CreateAlloca(llvmType(statement.type), nullptr,
+                                        statement.token.text);
+      builder.CreateStore(convertValue(value, statement.type), slot);
+      locals[statement.token.text] = slot;
       break;
+    }
     case Statement::Evaluate:
       emitExpr(*statement.expression);
       break;
@@ -149,8 +173,18 @@ class Generator {
         builder.CreateRet(retVal);
       }
       break;
-    case Statement::Assign:
-      locals[statement.token.text] = emitExpr(*statement.expression);
+    case Statement::Assign: {
+      auto *slot = locals.at(statement.token.text);
+      builder.CreateStore(convertValue(emitExpr(*statement.expression),
+                                       statement.type),
+                          slot);
+      break;
+    }
+    case Statement::Store:
+      builder.CreateStore(
+          convertValue(emitExpr(*statement.expression),
+                       *statement.condition->type.element),
+          emitExpr(*statement.condition));
       break;
     case Statement::If: {
       auto *cond = emitExpr(*statement.condition);
@@ -175,7 +209,6 @@ class Generator {
       break;
     }
     case Statement::While: {
-      auto *predBlock = builder.GetInsertBlock();
       auto *loopBlock =
           llvm::BasicBlock::Create(context, "loop", currentFunction);
       auto *bodyBlock =
@@ -184,19 +217,6 @@ class Generator {
           llvm::BasicBlock::Create(context, "exit", currentFunction);
       builder.CreateBr(loopBlock);
       builder.SetInsertPoint(loopBlock);
-      std::vector<std::string> modifiedVars;
-      for (const auto &s : statement.body) {
-        if (s.kind == Statement::Assign)
-          modifiedVars.push_back(s.token.text);
-      }
-      std::vector<llvm::PHINode *> phis;
-      for (const auto &var : modifiedVars) {
-        auto *phi = builder.CreatePHI(locals[var]->getType(), 2,
-                                      var + ".phi");
-        phi->addIncoming(locals[var], predBlock);
-        phis.push_back(phi);
-        locals[var] = phi;
-      }
       auto *cond = emitExpr(*statement.condition);
       builder.CreateCondBr(cond, bodyBlock, exitBlock);
       builder.SetInsertPoint(bodyBlock);
@@ -204,10 +224,6 @@ class Generator {
         emitStatement(s, function);
       if (!builder.GetInsertBlock()->getTerminator())
         builder.CreateBr(loopBlock);
-      for (size_t i = 0; i < modifiedVars.size(); ++i) {
-        phis[i]->addIncoming(locals[modifiedVars[i]],
-                              builder.GetInsertBlock());
-      }
       builder.SetInsertPoint(exitBlock);
       break;
     }
@@ -260,7 +276,10 @@ public:
       locals.clear();
       for (size_t i = 0; i < function.parameters.size(); ++i) {
         target->getArg(i)->setName(function.parameters[i].text);
-        locals[function.parameters[i].text] = target->getArg(i);
+        auto *slot = builder.CreateAlloca(llvmType(function.paramTypes[i]), nullptr,
+                                          function.parameters[i].text);
+        builder.CreateStore(target->getArg(i), slot);
+        locals[function.parameters[i].text] = slot;
       }
       for (const auto &statement : function.body)
         emitStatement(statement, function);

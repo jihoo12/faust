@@ -128,6 +128,19 @@ void checkExpr(Expr &expr, const Function &function,
     expr.type = found->second.returnType;
     break;
   }
+  case Expr::AddressOf:
+    checkExpr(*expr.children[0], function, locals, signatures);
+    if (expr.children[0]->kind != Expr::Variable)
+      fail(expr.token, "'&' requires an addressable variable");
+    expr.type = Type::pointer(expr.children[0]->type);
+    break;
+  case Expr::Dereference:
+    checkExpr(*expr.children[0], function, locals, signatures);
+    if (expr.children[0]->type.kind != Type::Pointer ||
+        !expr.children[0]->type.element)
+      fail(expr.token, "'*' requires pointer type");
+    expr.type = *expr.children[0]->type.element;
+    break;
   case Expr::Negate:
     checkExpr(*expr.children[0], function, locals, signatures);
     if (!isNumeric(expr.children[0]->type))
@@ -249,6 +262,16 @@ void checkStatement(Statement &statement, const Function &function,
       fail(statement.token, "assignment type mismatch");
     break;
   }
+  case Statement::Store:
+    checkExpr(*statement.condition, function, locals, signatures);
+    if (statement.condition->type.kind != Type::Pointer ||
+        !statement.condition->type.element)
+      fail(statement.token, "pointer assignment requires pointer type");
+    checkExpr(*statement.expression, function, locals, signatures);
+    if (!canImplicitlyConvert(*statement.expression,
+                              *statement.condition->type.element))
+      fail(statement.token, "pointer assignment type mismatch");
+    break;
   case Statement::Asm:
     if (!function.hasAsm)
       fail(statement.token, "asm block requires asm effect in contract of '" +

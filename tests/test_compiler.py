@@ -262,6 +262,33 @@ class CompilerTests(unittest.TestCase):
                      "if f() { print(1); } else { print(0); }\n"
                      "return 0; }", "1\n")
 
+    def test_address_of_and_dereference(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "let x = 42; let p: *i32 = &x; print(*p); return 0; }",
+                     "42\n")
+
+    def test_store_through_pointer(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "let x = 1; let p: *i32 = &x; *p = 42; print(x); return 0; }",
+                     "42\n")
+
+    def test_pointer_parameter_dereference(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn read(p: *i32) -> i32 { return *p; }\n"
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "let x = 7; print(read(&x)); return 0; }",
+                     "7\n")
+
+    def test_address_of_rvalue_rejected(self):
+        self.reject("fn main() -> i32 { let p = &(1 + 2); return 0; }",
+                    "'&' requires an addressable variable")
+
+    def test_dereference_non_pointer_rejected(self):
+        self.reject("fn main() -> i32 { let x = *42; return 0; }",
+                    "'*' requires pointer type")
+
     def test_extern_declaration(self):
         self.execute("extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};\n"
                      "fn main() -> i32 !{asm, syscalls 1} {\n"

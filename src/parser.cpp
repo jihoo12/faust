@@ -125,6 +125,20 @@ class Parser {
       result->children.push_back(primary());
       return result;
     }
+    if (accept("&")) {
+      auto result = std::make_unique<Expr>();
+      result->kind = Expr::AddressOf;
+      result->token = token;
+      result->children.push_back(primary());
+      return result;
+    }
+    if (accept("*")) {
+      auto result = std::make_unique<Expr>();
+      result->kind = Expr::Dereference;
+      result->token = token;
+      result->children.push_back(primary());
+      return result;
+    }
     if (accept("true")) {
       auto result = std::make_unique<Expr>();
       result->kind = Expr::Boolean;
@@ -299,6 +313,13 @@ class Parser {
         }
       }
       expect("}");
+    } else if (peek().text == "*") {
+      statement.kind = Statement::Store;
+      statement.token = take();
+      statement.condition = primary();
+      expect("=");
+      statement.expression = expression();
+      expect(";");
     } else {
       Token ident = peek();
       if (isIdentifier(ident) && pos + 1 < tokens.size() &&
