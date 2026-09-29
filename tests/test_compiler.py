@@ -628,7 +628,7 @@ class CompilerTests(unittest.TestCase):
     def test_extern_transitive_syscall(self):
         self.reject("extern write(fd: i32, buf: i32, len: i32) -> i32 !{extern, asm, syscalls 1};\n"
                     "fn helper() -> i32 !{extern, asm, syscalls 1} { return write(1, 0, 0); }\n"
-                    "fn main() -> i32 { return helper(); }",
+                    "fn main() -> i32 { helper(); return 0; }",
                     "requires syscall 1")
 
     def test_extern_multiple_syscalls(self):
@@ -739,7 +739,7 @@ class CompilerTests(unittest.TestCase):
         sub.mkdir()
         (sub / "value.faust").write_text("fn value() -> i32 { return 7; }")
         (sub / "lib.faust").write_text('include "value.faust";\nfn answer() -> i32 { return value(); }')
-        self.execute('include "sub/lib.faust";\nfn main() -> i32 { return answer(); }', "")
+        self.execute('include "sub/lib.faust";\nfn main() -> i32 { answer(); return 0; }', "")
 
     def test_duplicate_include_is_loaded_once(self):
         (self.root / "lib.faust").write_text("fn helper() -> i32 { return 1; }")
