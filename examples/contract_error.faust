@@ -1,6 +1,6 @@
-extern write(fd: i32, buf: i32, len: i32) -> i32 !{asm, syscalls 1};
+extern write(fd: i32, buf: i32, len: i32) -> i32 !{extern, asm, syscalls 1};
 
-fn report(value: i32) -> i32 !{asm, syscalls 1} {
+fn report(value: i32) -> i32 !{extern, asm, syscalls 1} {
   return write(1, 0, 0);
 }
 

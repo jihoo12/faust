@@ -12,6 +12,7 @@ struct Signature {
   Type returnType;
   std::set<int> syscalls;
   bool hasAsm;
+  bool hasExtern;
   bool isVariadic;
 };
 
@@ -37,7 +38,9 @@ bool canImplicitlyConvert(const Expr &expr, const Type &target) {
     return true;
   if (expr.type.kind == Type::Array && target.kind == Type::Pointer &&
       expr.type.element && target.element &&
-      *expr.type.element == *target.element)
+      *expr.type.element == *target.element &&
+      (expr.kind == Expr::Variable || expr.kind == Expr::Dereference ||
+       expr.kind == Expr::Index || expr.kind == Expr::String))
     return true;
   if (target.kind == Type::I32 && isIntegerType(expr.type))
     return true;
@@ -137,6 +140,10 @@ void checkExpr(Expr &expr, const Function &function,
     }
     if (found->second.hasAsm && !function.hasAsm)
       fail(expr.token, "call to '" + expr.token.text + "' requires asm effect in contract of '" +
+                            function.name.text + "'");
+    if (found->second.hasExtern && !function.hasExtern)
+      fail(expr.token, "call to '" + expr.token.text +
+                            "' requires extern effect in contract of '" +
                             function.name.text + "'");
     for (size_t i = 0; i < found->second.paramTypes.size(); ++i) {
       checkExpr(*expr.children[i], function, locals, signatures);
@@ -306,7 +313,9 @@ void check(Program &functions) {
     if (!signatures
              .emplace(function.name.text,
                       Signature{function.paramTypes, function.returnType, function.syscalls,
-                                function.hasAsm, function.isVariadic})
+                                function.hasAsm,
+                                function.hasExtern || function.isExtern,
+                                function.isVariadic})
              .second)
       fail(function.name,
            "duplicate or reserved function '" + function.name.text + "'");

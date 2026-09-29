@@ -68,6 +68,7 @@ struct Function {
   Type returnType = Type::I32;
   std::set<int> syscalls;
   bool hasAsm = false;
+  bool hasExtern = false;
   bool isExtern = false;
   bool isVariadic = false;
   std::vector<Statement> body;
