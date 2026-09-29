@@ -611,6 +611,32 @@ class CompilerTests(unittest.TestCase):
     def test_u64_type(self):
         self.execute("fn main() -> i32 { let x: u64 = 100000; return 0; }", "")
 
+    def test_unsigned_comparison(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn main() -> i32 !{asm, syscalls 1} {\n"
+                     "let a: u8 = 255; let b: u8 = 1; if a > b { print(1); } else { print(0); } return 0; }",
+                     "1\n")
+
+    def test_unsigned_extension_to_i32(self):
+        self.execute(PRINT_WRAPPER +
+                     "fn widen(x: u8) -> i32 { return x; }\n"
+                     "fn main() -> i32 !{asm, syscalls 1} { print(widen(255)); return 0; }",
+                     "255\n")
+
+    def test_unsigned_to_float_codegen(self):
+        result = self.compile(
+            "fn to_float(x: u32) -> f32 { let y: f32 = x; return y; }\n"
+            "fn main() -> i32 { to_float(1); return 0; }")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("uitofp i32", self.ir.read_text())
+
+    def test_unsigned_comparison_codegen(self):
+        result = self.compile(
+            "fn greater(a: u32, b: u32) -> bool { return a > b; }\n"
+            "fn main() -> i32 { greater(1, 2); return 0; }")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("icmp ugt i32", self.ir.read_text())
+
     def test_f32_type(self):
         self.execute("fn main() -> i32 { let x: f32 = 1; return 0; }", "")
 
