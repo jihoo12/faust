@@ -272,6 +272,11 @@ class CompilerTests(unittest.TestCase):
                      "fn main() -> i32 !{asm, syscalls 1} { puts(\"hello\"); return 0; }",
                      "hello\n")
 
+    def test_string_literal_escape_decoding(self):
+        self.execute("extern printf(fmt: *i8, ...) -> i32 !{asm, syscalls 1};\n"
+                     "fn main() -> i32 !{asm, syscalls 1} { printf(\"a\\\\tb\\\\n\"); return 0; }",
+                     "a\tb\n")
+
     def test_string_literal_rejected_for_wrong_pointer_element_type(self):
         self.reject("extern takes_i32_ptr(p: *i32) -> i32 !{asm, syscalls 1};\n"
                     "fn main() -> i32 !{asm, syscalls 1} { return takes_i32_ptr(\"hello\"); }",
