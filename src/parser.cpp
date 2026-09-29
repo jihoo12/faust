@@ -36,7 +36,7 @@ class Parser {
         t.text == "f64" || t.text == "bool" || t.text == "void" ||
         t.text == "if" || t.text == "else" || t.text == "while" ||
         t.text == "true" || t.text == "false" || t.text == "extern" ||
-        t.text == "asm" || t.text == "struct")
+        t.text == "asm" || t.text == "struct" || t.text == "include")
       return false;
     return true;
   }
@@ -400,6 +400,16 @@ public:
   Program parse() {
     Program program;
     while (!peek().text.empty()) {
+      if (accept("include")) {
+        Token path = peek();
+        if (path.text.size() < 2 || path.text.front() != '"' ||
+            path.text.back() != '"')
+          fail(path, "expected include path string");
+        take();
+        expect(";");
+        program.includes.push_back(std::move(path));
+        continue;
+      }
       if (accept("struct")) {
         StructDecl decl;
         decl.name = identifier();
