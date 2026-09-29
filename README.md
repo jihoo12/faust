@@ -1,18 +1,19 @@
 # Faust
 
 Faust is an experimental systems programming language built around explicit
-resource contracts. This first compiler parses Faust source, checks function
+syscall contracts. This compiler parses Faust source, checks function
 contracts, and emits verified LLVM 22 IR for interpreted or native execution.
 
 ```text
+extern write(fd: i32, buf: *i8, len: i32) -> i32 !{asm, syscalls 1};
+
 fn add(a: i32, b: i32) -> i32 {
   return a + b;
 }
 
-fn main() -> i32 !{alloc, io, block} {
+fn main() -> i32 !{asm, syscalls 1} {
   let answer = add(20, 22);
-  print(answer);
-  return 0;
+  return write(1, 0, 0);
 }
 ```
 
@@ -45,64 +46,83 @@ Check a program without generating IR:
 ./build/faust --check examples/contract_error.faust
 ```
 
-The second command deliberately fails: `main` has not declared the effects of
-`report`. Diagnostics include the source path, line, and column. Without `-o`,
-the compiler writes IR to standard output. Invalid programs do not generate IR.
+The second command deliberately fails: `main` has not declared the syscalls
+required by `report`. Diagnostics include the source path, line, and column.
+Without `-o`, the compiler writes IR to standard output. Invalid programs do
+not generate IR.
 
-## Resource contracts
+## Syscall contracts
 
-A contract is an upper bound on a function's permitted effects:
+A contract is an upper bound on a function's permitted system effects:
 
 ```text
 fn compute() -> i32 !{} { return 42; }
-fn report() -> i32 !{alloc, io, block} { return print(compute()); }
+fn report() -> i32 !{asm, syscalls 1} { return write(1, 0, 0); }
 ```
 
 Omitting `!{...}` is equivalent to the empty contract `!{}`. At every call,
-the callee's declared effects must be a subset of the caller's contract.
+the callee's declared syscalls must be a subset of the caller's contract.
 Contracts are explicit, not inferred. Unused permissions are allowed.
 Forward calls and recursion follow the same rule. Every function is checked,
 including functions that are never called, so a wrapper cannot hide effects.
 
 | Effect | Resource behavior |
 | --- | --- |
-| `alloc` | May dynamically allocate memory |
-| `io` | May interact with external input or output |
-| `block` | May wait for an external resource |
+| `asm` | May contain inline assembly |
+| `syscalls N` | May invoke syscall number N (x86-64) |
 
-The built-in `print(value: i32)` prints a signed decimal integer and a newline,
-then returns `0`. It requires **all three effects**, because its C `printf`
-implementation may allocate and block as well as perform I/O. Its return value
-does not report output errors. `main` explicitly declares its own allowed effects;
-the prototype has no separate host policy restricting the entry point.
+Declaring `syscalls` requires `asm` — syscalls are implemented via inline
+assembly. The compiler enforces this: a function with `syscalls` but no `asm`
+is rejected.
+
+`extern` declares a C function with a syscall contract:
+
+```text
+extern write(fd: i32, buf: *i8, len: i32) -> i32 !{asm, syscalls 1};
+extern read(fd: i32, buf: *i8, len: i32) -> i32 !{asm, syscalls 0};
+```
+
+`asm` blocks embed inline assembly with optional output/input constraints:
+
+```text
+fn port_in(port: i16) -> i8 !{asm} {
+  let result: i8;
+  asm {
+    "inb %dx, %al"
+    : "=al"(result)
+    : "dx"(port)
+  };
+  return result;
+}
+```
 
 These contracts check calls in Faust source. They are not an operating-system
 sandbox, memory budgets, a capability token system, a termination proof, or
 memory safety guarantees. Stack use, runtime startup, and execution time are
-not tracked. In particular, a function without `block` can still recurse forever.
-There are no user allocation or waiting primitives yet; `alloc` and `block` are
-already checked in declared contracts and in calls to `print`.
+not tracked. In particular, a function without `asm` can still recurse forever.
 
 ## Current language
 
 - Functions use `fn name(parameter: i32) -> i32`, with an optional contract.
-- All values, parameters, and function results are signed 32-bit integers.
-- `let name = expression;` creates an immutable local. Repeated local and
-  parameter names are rejected; local shadowing is not supported.
-- Expressions support calls, parentheses, unary `-`, and binary `+`, `-`, `*`.
-  Multiplication binds tighter than addition and subtraction. Binary operators
-  associate left to right; operands and arguments evaluate left to right.
+- Types: `i32`, `bool`. Pointers use `*T` syntax (currently mapped to `i32`).
+- `let name = expression;` creates an immutable local. Assignment `x = expr;`
+  mutates an existing variable.
+- Expressions support calls, parentheses, unary `-`, `!`, binary `+`, `-`,
+  `*`, comparisons (`<`, `>`, `<=`, `>=`, `==`, `!=`), and logical operators
+  (`&&`, `||`). Logical operators use short-circuit evaluation.
+- `if`/`else` statements with `else if` chains.
+- `while` loops with phi nodes for loop-carried variables.
+- `asm` blocks for inline assembly.
+- `extern` declarations for C functions with syscall contracts.
 - Arithmetic wraps modulo 2^32. Literals must fit in `i32`, including `-2147483648`.
-- Expression statements discard their result. Every function must end with
-  `return expression;`; statements after a return are rejected.
+- Every function must end with `return expression;`; statements after a return
+  are rejected.
 - `//` starts a line comment. Programs must define `main() -> i32`.
-- `print` is reserved. User functions have separate LLVM names from C runtime
-  symbols. A source function named `printf` does not replace the output runtime.
 
-The compiler intentionally starts small. It does not yet implement conditionals,
-loops, booleans, strings, pointers, heap allocation, structures, modules, foreign
-function declarations, or ownership. The next design work can build on the
-contract checker before expanding the systems programming surface.
+The compiler intentionally starts small. It does not yet implement strings,
+heap allocation, structures, modules, or ownership. The next design work can
+build on the syscall contract checker before expanding the systems programming
+surface.
 
 ## Compiler structure
 
@@ -115,7 +135,7 @@ LLVM IR. The CLI orchestrates these stages and handles file input and output.
 | `src/diagnostic.cpp` | Shared source-located error reporting |
 | `src/lexer.cpp` | Source text to tokens |
 | `src/parser.cpp` | Tokens to an AST |
-| `src/semantic.cpp` | Name resolution, call arity, entry point, and contracts |
+| `src/semantic.cpp` | Name resolution, call arity, entry point, types, and syscall contracts |
 | `src/codegen.cpp` | Checked AST to verified LLVM IR |
 | `src/main.cpp` | Command-line arguments, files, and pipeline orchestration |
 
@@ -134,9 +154,9 @@ nix flake check
 ```
 
 `nix build` runs the compiler tests and installs `result/bin/faust`. Tests cover
-contract violations, transitive calls, diagnostics, arithmetic, evaluation order,
-LLVM execution, and native compilation. `flake.lock` pins Nixpkgs; update it with
-`nix flake update`.
+syscall contract violations, transitive calls, asm blocks, diagnostics,
+arithmetic, evaluation order, control flow, LLVM execution, and native
+compilation. `flake.lock` pins Nixpkgs; update it with `nix flake update`.
 
 ## References
 
